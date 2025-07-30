@@ -5,7 +5,7 @@
 
 <p bind:this={block.element}>
     {#if block.children}
-        {#each block.children as child}
+        {#each block.children as child (child.id)}
             {#if child.component}
                 {@const Component = child.component}
                 <Component block={child} />
@@ -17,6 +17,8 @@
 
 <style lang="scss">
     p {
+
         background: hsla(0, 0%, 0%, 0.05);
+        margin-bottom: 1rem;
     }
 </style>

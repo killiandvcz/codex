@@ -5,7 +5,7 @@
 </script>
 
 {#if codex}
-    <div class="editor" contenteditable="true" bind:this={codex.element} oninput={codex.oninput} onkeydown={codex.onkeydown}>
+    <div class="editor" contenteditable="true" bind:this={codex.element} oninput={codex.oninput} onkeydown={codex.onkeydown} onbeforeinput={codex.onbeforeinput}>
         {#each codex.children as child}
             {#if child.component}
                 {@const Component = child.component}
@@ -20,6 +20,7 @@
         width: 100%;
         max-width: 800px;
         height: 100%;
+        outline: none;
     }
     
 </style>
