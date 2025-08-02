@@ -9,8 +9,6 @@ export class Linebreak extends Block {
         });
     }
     
-    
-    
     /** @type {HTMLBRElement?} */
     element = $state(null);
     
@@ -21,25 +19,32 @@ export class Linebreak extends Block {
     
     /** @param {KeyboardEvent} e */
     onkeydown = e => {
-        // e.preventDefault();
-        
-        // if (this.parent && this.parent instanceof MegaBlock) {
-        //     const Text = this.parent?.blocks.find(block => block.type === 'text');
-        //     if (Text) {
-
-        //         
-        //     }
-        // }
+        if (e.key === 'Backspace') {
+            e.preventDefault();
+            if (this.selected) {
+                console.log('Backspace pressed on linebreak');
+                const parent = this.parent;
+                const previous = parent?.children?.find(child => child.index === this.index - 1);
+                console.log('Previous block:', previous);
+                console.log(previous === this);
+                
+                if (previous) {
+                    this.delete();
+                    previous.focus?.(-1, -1);
+                } else {
+                    this.parent.onkeydown?.(e);
+                }
+            }
+        }
     }
     
     /** @param {InputEvent} e */
     onbeforeinput = e => {
-        console.warn('Linebreak onbeforeinput', e);
+        // console.warn('Linebreak onbeforeinput', e);
         e.preventDefault();
         if (this.parent && this.parent instanceof MegaBlock) {
-            
             if (this.parent.blocks.find(block => block === Text) && this.codex) {
-                console.warn(e);
+                // console.warn(e);
                 
                 if (e.inputType === 'insertText' && e.data) {
                     const newText = new Text(this.codex, { text: e.data || '', bold: false, italic: false, underline: false, strikethrough: false, code: false });
@@ -53,7 +58,7 @@ export class Linebreak extends Block {
                         if (newText.element) {
                             this.codex?.selection?.setRange(newText.element, e.data.length, newText.element, e.data.length);
                         } else {
-                            console.warn('New text element is not available yet.');
+                            // console.warn('New text element is not available yet.');
                             focus();
                         }
                     })
@@ -63,6 +68,39 @@ export class Linebreak extends Block {
                 
             }
             
+        }
+    }
+
+
+
+    delete = () => this.parent && (this.parent.children = this.parent?.children.filter(child => child !== this));
+
+    /** @param {Null} [s] @param {Null} [e] @param {Number} [attempts] */
+    focus = (s, e, attempts) => requestAnimationFrame(() => {  
+        if (this.element) {
+            const data = this.getFocusData();
+            if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
+        } else {
+            console.warn('Linebreak element is not available yet.');
+            if (attempts === undefined) attempts = 0;
+            if (attempts < 10) {
+                this.focus(null, null, attempts + 1);
+            }
+        }
+    });
+
+    /** Returns the focus data for the linebreak element */
+    getFocusData = () => {
+        if (this.element) {
+            const parentElement = this.element.parentElement;
+            if (!parentElement) return;
+            const blockOffset = Array.from(parentElement?.childNodes).indexOf(this.element);
+            return {
+                startElement: parentElement,
+                endElement: parentElement,
+                startOffset: blockOffset,
+                endOffset: blockOffset,
+            };
         }
     }
 }

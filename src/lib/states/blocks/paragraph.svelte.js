@@ -26,8 +26,10 @@ export class Paragraph extends MegaBlock {
                     params: ['from', 'to'],
                     handler: 'delete'
                 },
-            }
+            },
         });
+        
+        
         
         $effect.root(() => {
             $effect(() => {
@@ -42,12 +44,13 @@ export class Paragraph extends MegaBlock {
                 }
             })
         });
+        
     }
     
     /** @type {HTMLParagraphElement?} */
     element = $state(null);
     
-    debug = $derived(`Paragraph ${this.index} - ${this.selection.anchorOffset} - ${this.selection.focusOffset}`);
+    debug = $derived(`Paragraph ${this.index} - ${this.selection.anchorOffset} - ${this.selection.focusOffset} [length: ${this.length}]`);
     
     selection = $derived.by(() => {
         // Récupère la sélection globale du codex
@@ -102,6 +105,18 @@ export class Paragraph extends MegaBlock {
             isPartialSelection: isAnchorInParagraph !== isFocusInParagraph // Sélection qui commence ou finit dans ce paragraphe
         };
     });
+
+    /** @type {Number} */
+    length = $derived(this.children.reduce((acc, child) => {
+        return acc + (child instanceof Text ? child.text.length : 1);
+    }, 0));
+    
+    /** @type {Number} */
+    start = $derived(this.before ? (this.before.end ?? 0) + 1 : 0);
+    
+    /** @type {Number} */
+    end = $derived(this.start + this.length);
+
     
     /** @param {InputEvent} e */
     oninput = e => {
@@ -213,12 +228,12 @@ export class Paragraph extends MegaBlock {
                     const beforeBlocks = this.children.filter(child => child.index < block.index);
                     //sum the offsets of the blocks before the current block
                     const beforeOffset = beforeBlocks.reduce((acc, child) => acc + (child instanceof Text ? child.text.length : 1), 0);
-                    console.log('Enter pressed in block:', block, 'at index:', block.index, 'beforeOffset:', beforeOffset);
+                    // console.log('Enter pressed in block:', block, 'at index:', block.index, 'beforeOffset:', beforeOffset);
                     const offset = (block instanceof Text ? this.codex?.selection.range?.startOffset || 0 : 1) + beforeOffset;
-                    console.log('Offset in block:', offset);
+                    // console.log('Offset in block:', offset);
                     
                     const p = this.split(offset);
-
+                    
                     const focus = () => requestAnimationFrame(() => {
                         if (p.element) {
                             p.focus(0);
@@ -232,8 +247,8 @@ export class Paragraph extends MegaBlock {
             } else if (e.key === 'Backspace') {
                 e.preventDefault();
                 
-
-
+                
+                
                 
                 
             } else {
@@ -252,10 +267,10 @@ export class Paragraph extends MegaBlock {
     split = offset => {
         
         const splittingBlock = this.children.find(child => offset >= child.start && offset <= child.end);
-        console.log('Splitting block at offset:', offset, 'in block:', splittingBlock);
+        // console.log('Splitting block at offset:', offset, 'in block:', splittingBlock);
         
         const afterBlocks = this.children.filter(child => child.index > splittingBlock.index);
-        console.log('After blocks:', afterBlocks);
+        // console.log('After blocks:', afterBlocks);
         
         const startBlock = splittingBlock instanceof Text ? splittingBlock.split(offset - splittingBlock.start) : new Linebreak(this.codex);
         
@@ -273,17 +288,17 @@ export class Paragraph extends MegaBlock {
             newParagraph,
             ...this.codex.children.slice(parentIndex + 1),
         ];
-
+        
         return newParagraph;
     }
-
-
+    
+    
     /**
-     * @param {(Text | Linebreak)[]} children
-     */
+    * @param {(Text | Linebreak)[]} children
+    */
     join = (children) => {
         if (children.length === 0) return;
-
+        
         for (const child of children) {
             if (!(child instanceof Text || child instanceof Linebreak)) {
                 throw new Error(`Invalid child type: ${child.constructor.name}. Expected Text or Linebreak.`);
@@ -291,22 +306,63 @@ export class Paragraph extends MegaBlock {
             this.children.push(child);
         }
     }
-
-
-    /** @param {Number} offset */
-    focus = offset => {
-        const block = this.children.find(child => offset >= child.start && offset <= child.end);
-        if (this.element && block && block.element) {
-            if (block instanceof Text) {
-                this.codex?.selection?.setRange(block.element, offset - block.start, block.element, offset - block.start);
-            } else if (block instanceof Linebreak) {
-                const linebreakElement = block.element;
-                // find the offset of the block in the paragraph element parent
-                const parentElement = this.element;
-                const blockOffset = Array.from(parentElement.childNodes).indexOf(linebreakElement);
-                this.codex?.selection?.setRange(parentElement, blockOffset, parentElement, blockOffset);
+    
+    
+    /** @param {Number} start @param {Number} end @param {Number} attempts */
+    focus = (start, end, attempts) => requestAnimationFrame(() => {
+        if (this.element) {
+            const data = this.getFocusData(start, end);
+            if (data) {
+                console.log(`Focusing paragraph ${this.index} at start: ${start}, end: ${end}`);
+                this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
+            } else {
+                console.warn('Could not get focus data for paragraph:', this);
             }
-        }        
+        } else {
+            console.warn('Paragraph element is not available yet.');
+            if (attempts === undefined) attempts = 0;
+            if (attempts < 10) {
+                console.warn(`Retrying focus for paragraph ${this.index}... (${attempts + 1}/10)`);
+                this.focus(start, end, attempts + 1);
+            } else {
+                console.error(`Failed to focus paragraph ${this.index} after 10 attempts.`);
+            }
+        } 
+    });
+
+    
+
+    /** @param {Number} start @param {Number} end */
+    getFocusData = (start, end) => {
+        start ??= 0;
+        end ??= start;
+        if (start && start < 0) start = this.end + start;
+        if (end && end < 0) end = this.end + end;
+
+
+        if (start < 0 || end < 0 || start > this.end || end > this.end) {
+            console.warn(`Invalid focus range: start=${start}, end=${end} for paragraph ${this.index}. Resetting to 0.`);
+            start = 0;
+            end = 0;
+        }
+
+        const startBlock = this.children.find(child => start >= child.start && start <= child.end);
+        const endBlock = this.children.find(child => end >= child.start && end <= child.end);
+
+        const startData = startBlock ? startBlock.getFocusData(start, start) : null;
+        const endData = endBlock ? endBlock.getFocusData(end, end) : null;
+
+        if (startData && endData) {
+            return {
+                startElement: startData.startElement,
+                startOffset: startData.startOffset,
+                endElement: endData.endElement,
+                endOffset: endData.endOffset,
+            };
+        } else {
+            console.warn('Could not get focus data for blocks:', startBlock, endBlock);
+            return null;
+        }
     }
     
     

@@ -51,6 +51,24 @@
                     <span class="value">{selection.collapsed}</span>
                 </div>
                 <div class="row">
+                    <span class="label">Multiblocks ?</span>
+                    <span class="value">{selection.isMultiBlock}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Depth</span>
+                    <span class="value">{selection.depth}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Length</span>
+                    <span class="value">{selection.length}</span>
+                </div>
+
+                <div class="row">
+                    <span class="label">Chain</span>
+                    <span class="value">{selection.parent?.path}</span>
+                </div>
+
+                <div class="row">
                     <span class="label">Start Container</span>
                     <span class="value">{selection.start?.nodeName || 'none'}</span>
                 </div>
@@ -75,7 +93,7 @@
             {#each selection.anchoredBlocks as block}
             <div class="row">
                 <span class="label">{block.type}</span>
-                <span class="value">{block.id}</span>
+                <span class="value">{block.index} - {block.id}</span>
             </div>
             {/each}
             {:else}

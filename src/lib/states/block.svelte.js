@@ -1,21 +1,24 @@
 /** 
- * @typedef {Object} BlockOperation
- * @property {string} type - The type of operation (e.g., "insert", "delete", "replace").
- * @property {string[]} params - Parameters for the operation, such as coordinates or block IDs.
- * @property {string} handler - The name of the handler function to execute for this operation.
- */
+* @typedef {Object} BlockOperation
+* @property {string} type - The type of operation (e.g., "insert", "delete", "replace").
+* @property {string[]} params - Parameters for the operation, such as coordinates or block IDs.
+* @property {string} handler - The name of the handler function to execute for this operation.
+*/
+
+import Codex from '$lib/components/Codex.svelte';
 
 /**
- * @typedef {Object} BlockManifest
- * @property {string} type - The type of block (e.g., "paragraph", "text", "linebreak").
- * @property {Object<string, BlockOperation>} [operations] - A map of operation types to their handlers.
- */
+* @typedef {Object} BlockManifest
+* @property {string} type - The type of block (e.g., "paragraph", "text", "linebreak").
+* @property {Object<string, BlockOperation>} [operations] - A map of operation types to their handlers.
+*/
 
 /**
- * @typedef {BlockManifest & {
- *   blocks: typeof Block[];
- * }} MegaBlockManifest
- */
+* @typedef {BlockManifest & {
+*   blocks: typeof Block[];
+*   strategies?: import('./strategy.svelte').Strategy[];
+* }} MegaBlockManifest
+*/
 
 export class Block {
     /** @param {import('./codex.svelte').Codex?} codex @param {BlockManifest} manifest @param {string?} id */
@@ -29,43 +32,46 @@ export class Block {
     /** @type {import('svelte').Component?} */
     component = $derived(this.codex?.components[this.type] || null);
     
-    index = $derived(this.codex?.recursive.indexOf(this));
-
+    /** @type {Number} */
+    index = $derived(this.codex?.recursive.indexOf(this) ?? -1);
+    
     /** @type {MegaBlock?} */
     parent = $derived(this.type === "codex" ? null : this.codex?.recursive.find(block => block instanceof MegaBlock && block?.children.includes(this)) || this.codex);
-
+    
     /** @type {Block?} */
     globalBefore = $derived((this.index && this.codex?.recursive.find(block => block.index === this.index - 1)) || null);
-
+    
     /** @type {Block?} */
     globalAfter = $derived((this.index && this.codex?.recursive.find(block => block.index === this.index + 1)) || null);
-
+    
     /** @type {Block?} */
     before = $derived((this.index && this.parent instanceof MegaBlock && this.parent.children?.find(b => b.index === this.index - 1)) || null);
     
     /** @type {Block?} */
     after = $derived((this.index && this.parent instanceof MegaBlock && this.parent.children?.find(b => b.index === this.index + 1)) || null);
-
+    
     /** @type {HTMLElement?} */
     element = $state(null);
-
-
-    selected = $derived(this.codex?.selection?.blocks.includes(this) || false);
-
     
-
+    selected = $derived(this.codex?.selection?.blocks.includes(this) || false);
+    
+    /** @type {Number} */
+    depth = $derived(this.parent ? this.parent.depth + 1 : 0);
+    
     /** @type {Number[]} */
     path = $derived.by(() => {
-        if (this.parent && this.parent instanceof MegaBlock) return [...this.parent.path, this.parent.children?.indexOf(this)];
+        if (this.parent && this.parent instanceof MegaBlock) return [...this.parent.path, this.index];
         else return [];
-    })
+    });
 
+    
+    
     /** @type {Object<string, any>} */
     metadata = $state({});
-
+    
     /** @param {String} operation */
     supports = operation => this.manifest?.operations && operation in this.manifest.operations || false;
-
+    
     /** @param {String} operation @param {Array<any>} params */
     execute = (operation, ...params) => {
         const handlerName = this.manifest?.operations?.[operation]?.handler;
@@ -75,7 +81,7 @@ export class Block {
         if (typeof handler !== 'function') throw new Error(`Handler "${handlerName}" is not a function in block "${this.type}".`);
         return handler(...params);
     }
-
+    
     
 }
 
@@ -83,9 +89,12 @@ export class MegaBlock extends Block {
     /** @param {import('./codex.svelte').Codex?} codex @param {MegaBlockManifest} manifest */
     constructor(codex, manifest) {
         super(codex, manifest);
-
+        
         /** @type {typeof Block[]} */
         this.blocks = manifest.blocks;
+        
+        /** @type {import('./strategy.svelte').Strategy[]} */
+        this.strategies = manifest.strategies || [];
     }
     
     /** @type {Block[]} */
@@ -96,6 +105,12 @@ export class MegaBlock extends Block {
         if (child instanceof MegaBlock) return [child, ...child.recursive];
         else return [child];
     }));
-
+    
     endpoints = $derived(this.recursive.filter(block => !(block instanceof MegaBlock)));
+    
+    /** @param {Block} block */
+    contains = block => this.recursive.includes(block);
+    
+    /** @param {import('./strategy.svelte').Strategy} strategy */
+    addStrategy = strategy => this.strategies.push(strategy);
 }

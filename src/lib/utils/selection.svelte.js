@@ -51,7 +51,7 @@ export class SvelteSelection {
     
     /** @type {Range[]} */
     #ranges = $state([]);
-
+    
     // Propriétés réactives de base
     anchorNode = $derived(this.#sel?.anchorNode ?? null);
     anchorOffset = $derived(this.#sel?.anchorOffset ?? 0);
@@ -61,7 +61,7 @@ export class SvelteSelection {
     rangeCount = $derived(this.#sel?.rangeCount ?? 0);
     type = $derived(this.#sel?.type ?? '');
     direction = $derived(this.#sel?.direction ?? 'none');
-
+    
     startOffset = $derived(this.direction === 'forward' ? this.anchorOffset : this.focusOffset);
     endOffset = $derived(this.direction === 'backward' ? this.anchorOffset : this.focusOffset);
     
@@ -125,6 +125,8 @@ export class SvelteSelection {
     #updateSelection = () => {
         try {
             this.raw = window.getSelection();
+            console.log('Selection updated:', this.raw);
+            
             
             if (!this.raw) {
                 this.#sel = null;
@@ -181,6 +183,9 @@ export class SvelteSelection {
             this.#ranges = [];
         }
     };
+    
+    // Méthode pour rafraîchir la sélection manuellement
+    refresh = () => this.#updateSelection();
     
     // Méthodes de manipulation de la sélection avec gestion d'erreurs
     
@@ -433,10 +438,144 @@ export class SvelteSelection {
     };
     
     /**
+    * Ajout à la classe SvelteSelection pour observer les mutations DOM
+    * qui peuvent affecter la position du caret sans déclencher selectionchange
+    */
+    
+    // Propriétés à ajouter à la classe
+    /** @type {MutationObserver?} */
+    #mutationObserver = null;
+    
+    /** @type {Set<Element>} */
+    #observedElements = new Set();
+    
+    /** @type {number?} */
+    #debounceTimer = null;
+    
+    /**
+    * Observe un élément contenteditable pour les mutations DOM qui peuvent
+    * affecter la position du caret sans déclencher selectionchange
+    * 
+    * @param {Element} element - L'élément contenteditable à observer
+    * @param {Object} options - Options d'observation
+    * @param {number} options.debounceMs - Délai de debounce en ms (défaut: 16ms = ~1 frame)
+    * @param {boolean} options.observeAttributes - Observer les changements d'attributs (défaut: false)
+    * @returns {boolean} True si l'observation a été configurée avec succès
+    */
+    observe = (element, options = {}) => {
+        const {
+            debounceMs = 16,
+            observeAttributes = false
+        } = options;
+        
+        try {
+            // Vérifier que l'élément est contenteditable
+            if (!element.isContentEditable && element.contentEditable !== 'true') {
+                console.warn('L\'élément observé n\'est pas contenteditable');
+            }
+            
+            // Créer l'observer si il n'existe pas encore
+            if (!this.#mutationObserver) {
+                this.#mutationObserver = new MutationObserver((mutations) => {
+                    // Filtrer les mutations pertinentes
+                    const relevantMutations = mutations.filter(mutation => {
+                        // Ignorer les mutations sur les attributs non-pertinents
+                        if (mutation.type === 'attributes') {
+                            const attr = mutation.attributeName;
+                            // Ne considérer que les attributs qui peuvent affecter le layout/contenu
+                            return ['class', 'style', 'contenteditable'].includes(attr);
+                        }
+                        
+                        // Toujours considérer les changements de contenu
+                        return mutation.type === 'childList' || mutation.type === 'characterData';
+                    });
+                    
+                    if (relevantMutations.length === 0) return;
+                    
+                    // Debounce pour éviter trop d'appels
+                    clearTimeout(this.#debounceTimer);
+                    this.#debounceTimer = setTimeout(() => {
+                        console.log('DOM mutation detected, updating selection');
+                        this.#updateSelection();
+                    }, debounceMs);
+                });
+            }
+            
+            // Ajouter l'élément à la liste des observés
+            this.#observedElements.add(element);
+            
+            // Configurer l'observation
+            this.#mutationObserver.observe(element, {
+                childList: true,        // Ajout/suppression d'enfants
+                subtree: true,          // Observer tous les descendants
+                characterData: true,    // Changements de texte dans les nœuds text
+                attributes: observeAttributes, // Changements d'attributs (optionnel)
+                attributeFilter: observeAttributes ? ['class', 'style', 'contenteditable'] : undefined
+            });
+            
+            return true;
+        } catch (error) {
+            console.warn('Erreur lors de la configuration de l\'observation:', error);
+            return false;
+        }
+    };
+    
+    /**
+    * Arrête l'observation d'un élément spécifique
+    * @param {Element} element - L'élément à ne plus observer
+    * @returns {boolean} True si l'élément était observé et a été retiré
+    */
+    unobserve = (element) => {
+        const wasObserved = this.#observedElements.delete(element);
+        
+        // Si plus aucun élément n'est observé, déconnecter l'observer
+        if (this.#observedElements.size === 0 && this.#mutationObserver) {
+            this.#mutationObserver.disconnect();
+            this.#mutationObserver = null;
+            clearTimeout(this.#debounceTimer);
+            this.#debounceTimer = null;
+        }
+        
+        return wasObserved;
+    };
+    
+    /**
+    * Arrête l'observation de tous les éléments
+    */
+    unobserveAll = () => {
+        if (this.#mutationObserver) {
+            this.#mutationObserver.disconnect();
+            this.#mutationObserver = null;
+        }
+        
+        this.#observedElements.clear();
+        clearTimeout(this.#debounceTimer);
+        this.#debounceTimer = null;
+    };
+    
+    /**
+    * Getter pour savoir quels éléments sont observés
+    * @returns {Element[]} Liste des éléments actuellement observés
+    */
+    get observedElements() {
+        return Array.from(this.#observedElements);
+    }
+    
+    /**
+    * Vérifie si un élément est actuellement observé
+    * @param {Element} element - L'élément à vérifier
+    * @returns {boolean} True si l'élément est observé
+    */
+    isObserving = (element) => {
+        return this.#observedElements.has(element);
+    };
+    
+    /**
     * Nettoie les ressources utilisées par l'instance.
     * À appeler lors de la destruction du composant.
     */
     destroy = () => {
+        this.unobserveAll();
         this.#cleanup?.();
         this.raw = null;
         this.#sel = null;

@@ -1,5 +1,6 @@
 import { untrack } from 'svelte';
 import { SvelteSelection } from '$lib/utils/selection.svelte';
+import { findClosestParentIndex } from '$lib/utils/coordinates.utils';
 
 export class CodexSelection extends SvelteSelection {
     /** @param {import('./codex.svelte').Codex} codex */
@@ -122,6 +123,24 @@ export class CodexSelection extends SvelteSelection {
         if (startIndex === -1 || endIndex === -1) return [];
         return this.codex.recursive.slice(startIndex, endIndex + 1);
     });
+
+    length = $derived(this.blocks.length);
+
+    depth = $derived(this.blocks.sort((a, b) => a.depth - b.depth).at(-1)?.depth || 0);
+
+    isMultiBlock = $derived(this.startBlock !== this.endBlock);
+
+    parent = $derived.by(() => {
+        const start = this.startBlock?.path
+        const end = this.endBlock?.path;
+        const commonIndex = findClosestParentIndex(start?.join('.'), end?.join('.'));
+        const parent = this.codex.recursive.find(block => block.index === commonIndex);
+        if (!parent) {
+            console.warn(`No common parent found for selection between ${start?.join('.')} and ${end?.join('.')}`);
+            return null;
+        }
+        return parent;
+    });
     
     /** @type {boolean} */
     collapsed = $derived(this.range ? this.range.collapsed : true);
@@ -145,5 +164,6 @@ export class CodexSelection extends SvelteSelection {
     }
     
     isInside = $derived(this.codex.element?.contains(this.start));
+
 }
 
