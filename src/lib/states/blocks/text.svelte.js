@@ -270,8 +270,8 @@ export class Text extends Block {
     getFocusData = (start, end) => {
         start ??= 0;
         end ??= start;
-        if (start < 0) start = this.text.length + start;
-        if (end < 0) end = this.text.length + end;
+        if (start < 0) start = this.text.length + (start + 1);
+        if (end < 0) end = this.text.length + (end + 1);
         if (start > this.text.length || end > this.text.length || start < 0 || end < 0) {
             console.warn(`Invalid focus range: start=${start}, end=${end} for text "${this.text}".`);
             return;

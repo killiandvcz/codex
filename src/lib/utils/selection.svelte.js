@@ -125,8 +125,6 @@ export class SvelteSelection {
     #updateSelection = () => {
         try {
             this.raw = window.getSelection();
-            console.log('Selection updated:', this.raw);
-            
             
             if (!this.raw) {
                 this.#sel = null;
@@ -146,7 +144,6 @@ export class SvelteSelection {
             }
             this.#ranges = newRanges;
             
-            // Extraction du texte et HTML si une sélection existe
             let text = '';
             let html = '';
             
@@ -155,7 +152,6 @@ export class SvelteSelection {
                     const range = this.raw.getRangeAt(0);
                     text = range.toString();
                     
-                    // Extraction du HTML
                     const fragment = range.cloneContents();
                     const div = document.createElement('div');
                     div.appendChild(fragment);

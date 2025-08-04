@@ -40,12 +40,9 @@ export class Linebreak extends Block {
     
     /** @param {InputEvent} e */
     onbeforeinput = e => {
-        // console.warn('Linebreak onbeforeinput', e);
         e.preventDefault();
         if (this.parent && this.parent instanceof MegaBlock) {
             if (this.parent.blocks.find(block => block === Text) && this.codex) {
-                // console.warn(e);
-                
                 if (e.inputType === 'insertText' && e.data) {
                     const newText = new Text(this.codex, { text: e.data || '', bold: false, italic: false, underline: false, strikethrough: false, code: false });
                     const index = this.parent.children.indexOf(this);
@@ -58,26 +55,27 @@ export class Linebreak extends Block {
                         if (newText.element) {
                             this.codex?.selection?.setRange(newText.element, e.data.length, newText.element, e.data.length);
                         } else {
-                            // console.warn('New text element is not available yet.');
                             focus();
                         }
                     })
                     focus();
-                }
-                
-                
-            }
-            
+                }   
+            } 
         }
     }
-
-
 
     delete = () => this.parent && (this.parent.children = this.parent?.children.filter(child => child !== this));
 
     /** @param {Null} [s] @param {Null} [e] @param {Number} [attempts] */
     focus = (s, e, attempts) => requestAnimationFrame(() => {  
         if (this.element) {
+            const strategy = this.parent?.strategies?.find(s => s.tags.includes('refocus'));
+            if (strategy && strategy.canHandle(this.codex, { block: this })) {
+                console.log(`Executing strategy "${strategy.name}" for refocus on block "${this.type}"`);
+                
+                strategy.execute(this.codex, { block: this });
+                return;
+            }
             const data = this.getFocusData();
             if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
         } else {

@@ -1,6 +1,7 @@
 import { MegaBlock } from "../block.svelte";
 import { Linebreak } from "./linebreak.svelte";
 import { Text } from "./text.svelte";
+import { paragraphStrategies } from "./strategies/paragraph.strategies";
 
 export class Paragraph extends MegaBlock {
     /**
@@ -27,7 +28,8 @@ export class Paragraph extends MegaBlock {
                     handler: 'delete'
                 },
             },
-        });
+            strategies: paragraphStrategies
+        })
         
         
         
@@ -330,14 +332,12 @@ export class Paragraph extends MegaBlock {
         } 
     });
 
-    
-
     /** @param {Number} start @param {Number} end */
     getFocusData = (start, end) => {
         start ??= 0;
         end ??= start;
-        if (start && start < 0) start = this.end + start;
-        if (end && end < 0) end = this.end + end;
+        if (start && start < 0) start = this.end + (start + 1);
+        if (end && end < 0) end = this.end + (end + 1);
 
 
         if (start < 0 || end < 0 || start > this.end || end > this.end) {
