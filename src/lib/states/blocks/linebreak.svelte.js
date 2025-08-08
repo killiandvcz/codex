@@ -15,10 +15,20 @@ export class Linebreak extends Block {
     start = $derived(this.before ? (this.before.end ?? 0) + 1 : 0);
     end = $derived(this.start);
     
-    debug = $derived(`\\n (${this.start} - ${this.end})`);
+    /** 
+     * The offset of the linebreak within its parent block. (Not reactive)
+     * @type {Number}
+     */
+    get offset() {
+        return Array.from(this.element?.parentNode?.childNodes || []).indexOf(this.element) || 0;
+    }
     
-    /** @param {KeyboardEvent} e */
-    onkeydown = e => {
+    debug = $derived(`\\n (${this.start} - ${this.end}) [${this.offset}]`);
+
+    
+    
+    /** @param {KeyboardEvent} e @param {Function} ascend */
+    onkeydown = (e, ascend) => {
         if (e.key === 'Backspace') {
             e.preventDefault();
             if (this.selected) {
@@ -32,10 +42,11 @@ export class Linebreak extends Block {
                     this.delete();
                     previous.focus?.(-1, -1);
                 } else {
-                    this.parent.onkeydown?.(e);
+                    // this.parent.onkeydown?.(e);
+                    ascend();
                 }
             }
-        }
+        } else ascend()
     }
     
     /** @param {InputEvent} e */
@@ -62,6 +73,10 @@ export class Linebreak extends Block {
                 }   
             } 
         }
+    }
+
+    onfocus = () => {
+        
     }
 
     delete = () => this.parent && (this.parent.children = this.parent?.children.filter(child => child !== this));

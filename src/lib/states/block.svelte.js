@@ -83,6 +83,17 @@ export class Block {
     }
     
     
+
+    /**
+     * Logs a message to the console if debugging is enabled.
+     * @param  {...any} args 
+     */
+    log = (...args) => {
+        if (this.codex?.debug) {
+            const prefix = `${this.type}-${this.index}`.toUpperCase();
+            console.log(prefix, ...args);
+        }
+    }
 }
 
 export class MegaBlock extends Block {

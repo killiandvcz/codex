@@ -1,9 +1,15 @@
 import { untrack } from 'svelte';
 import { Block } from '../block.svelte';
+import { TextInputOperation } from './operations/text.ops';
 
 /** 
 * @typedef {Object} TextInit
 * @property {String} [text] - Initial text content for the block.
+* @property {Object} [link] - Link metadata for the text block.
+* @property {String} [link.url] - The URL of the link.
+* @property {String} [link.target] - The target attribute for the link (e.g., '_blank').
+* @property {String} [link.title] - The title attribute for the link.
+* @property {String} [link.rel] - The rel attribute for the link.
 * @property {Boolean} [bold] - Whether the text should be bold.
 * @property {Boolean} [italic] - Whether the text should be italic.
 * @property {Boolean} [underline] - Whether the text should be underlined.
@@ -49,6 +55,8 @@ export class Text extends Block {
         this.strikethrough = init.strikethrough || false;
         this.code = init.code || false;
         
+        this.link = init.link || null;
+        
         $effect.root(() => {
             $effect(() => {
                 this.element && untrack(() => {
@@ -59,13 +67,6 @@ export class Text extends Block {
                         }
                     }
                 })
-            })
-            
-            $effect(() => {
-                // if (!this.text) this.parent && (this.parent.children = this.parent.children.filter(c => c !== this));
-                // if (!this.element) {
-                //     console.warn('Text element is not available yet.');
-                // }
             })
         });
     }
@@ -97,9 +98,10 @@ export class Text extends Block {
         ...this.underline ? ['u'] : [],
         ...this.strikethrough ? ['s'] : [],
         ...this.code ? ['c'] : [],
-    ].join(','));
+    ].join(''));
     
     selection = $derived.by(() => {
+        
         if (this.selected) {
             const selection = this.codex?.selection;
             let startOffset = null;
@@ -107,13 +109,14 @@ export class Text extends Block {
             if (selection?.startBlock?.index < this.index) {
                 startOffset = 0;
             } else if (selection?.startBlock?.index === this.index) {
-                startOffset = selection?.startOffset || 0;
+                startOffset = selection?.startOffset ?? 0;
+                this.log(`Selection start offset: ${startOffset} in text block at index ${this.index}`);
             }
             
             if (selection?.endBlock?.index > this.index) {
                 endOffset = this.text.length;
             } else if (selection?.endBlock?.index === this.index) {
-                endOffset = selection?.endOffset || this.text.length;
+                endOffset = selection?.endOffset ?? this.text.length;
             }
             
             if (startOffset !== null && endOffset !== null) {
@@ -130,24 +133,34 @@ export class Text extends Block {
     
     selectionDebug = $derived(`${this.selection ? `Selection: ${this.selection.start} - ${this.selection.end} (${this.selection.length})` : 'No selection'}`);
     
-    /** @param {KeyboardEvent} e */
-    onkeydown = e => {
-        console.log(`Text onkeydown: ${e.key}`);
-        if (e.key === 'Backspace') {
+    /** @param {KeyboardEvent} e @param {Function} ascend */
+    onkeydown = (e, ascend) => {
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+            this.log('Backspace/Delete pressed in text block:', this);
             e.preventDefault();
+            const parent = this.parent;
+            const start = this.start;
+            this.log(`Backspace/Delete pressed in text block at index ${this.index} with start ${start}`, this.codex?.selection.raw);
             if (this.selection && this.selection.length > 0) {
                 this.delete(this.selection.start, this.selection.end);
-            } else if (this.selection && this.selection.start > 0) {
-                const parent = this.parent;
-                const start = this.start;
-                const previous = parent?.children?.find(child => child.index === this.index - 1);
-                const deleted = this.delete(this.selection.start - 1, this.selection.start);
-                // if (deleted && previous) previous.focus?.(-1, -1);
-                // else 
-                if (this.selection) this.focus(this.selection.start - 1, this.selection.start - 1);
+                if (this.selection) this.focus(this.selection.start, this.selection.start);
+                else parent?.focus(start);
+            } else if (this.selection && this.selection.start === 0 && e.key === "Backspace") {
+                if (this.before) {
+                    this.before.delete(-2, -1);
+                    this.before.focus(-1);
+                }
+            } else if (this.selection && this.selection.end === this.text.length && e.key === "Delete") {
+                if (this.after) {
+                    this.after.delete(0, 1);
+                    this.after.focus(0);
+                }
+            } else if (this.selection) {
+                this.delete(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start : this.selection.start + 1);
+                if (this.selection) this.focus(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start);
                 else parent?.focus(start);
             }
-        }
+        } else ascend()
     }
     
     /** @param {InputEvent} e */
@@ -155,16 +168,23 @@ export class Text extends Block {
         this.refresh();
     }
     
+    onfocus = () => {
+        
+    }
+    
     
     /** @param {InputEvent} e */
-    beforeinput = e => {
-        // console.warn('Text beforeinput', e);
+    onbeforeinput = e => {
+        console.warn('Text beforeinput', e);
+        if (e.inputType === 'insertText' && e.data) {
+            const operation = new TextInputOperation(this, e.data, this.selection?.start || 0);
+            this.codex?.history?.add(operation);
+        }
         // e.preventDefault();
     }
     
     /** Refreshes the text content from the element */
     refresh = () => {
-        // console.log('Refreshing Text block', this.element);
         if (this.element) this.text = this.element.innerText;
         else this.text = '';
     }
@@ -192,7 +212,10 @@ export class Text extends Block {
     /** @param {Number} offset */
     split = (offset) => {
         if (offset < 0 || offset > this.text.length) {
-            throw new Error(`Offset ${offset} is out of bounds for text "${this.text}".`);
+            return null; // No split if offset is out of bounds
+        }
+        if (offset === 0 || offset === this.text.length) {
+            return null;
         }
         const newText = this.text.slice(offset);
         this.text = this.text.slice(0, offset);
@@ -217,6 +240,9 @@ export class Text extends Block {
     */
     delete = (from, to) => {
         if (from === to) return false; // No-op if the range is empty
+        if (from < 0) from = this.text.length + (from + 1);
+        if (to < 0) to = this.text.length + (to + 1);
+        if (to > this.text.length) to = this.text.length;
         if (from < 0 || to > this.text.length || from > to) {
             throw new Error(`Invalid range from ${from} to ${to} for text "${this.text}".`);
         }
@@ -237,6 +263,22 @@ export class Text extends Block {
         return false; // Block was deleted
     }
     
+    
+    /** Merges this text block with another text block.
+    * @param {Text} textBlock - The text block to merge with.
+    * @throws {Error} If the provided block is not a Text instance.
+    */
+    merge = (textBlock) => {
+        if (!(textBlock instanceof Text)) {
+            throw new Error(`Cannot merge with non-text block: ${textBlock}`);
+        }
+        const end = this.text.length;
+        this.text += textBlock.text;
+        this.resync();
+        this.refresh();
+        textBlock.delete(0, -1);
+        this.focus(end, end);
+    }
     
     /** 
     * Focuses the text block at the specified start and end positions.
@@ -264,6 +306,9 @@ export class Text extends Block {
             }
         }
     });
+    
+    
+    
     
     
     /** @param {Number} [start] @param {Number} [end] */

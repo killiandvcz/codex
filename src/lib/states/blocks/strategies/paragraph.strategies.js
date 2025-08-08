@@ -5,7 +5,7 @@ import { Text } from "../text.svelte";
 /**
  * @typedef {Object} ParagraphBackspaceContext
  * @property {KeyboardEvent} event - The keyboard event that triggered the strategy.
- * @property {import('../paragraph.svelte').Paragraph} paragraph - The paragraph block that the strategy is applied to.
+ * @property {import('../paragraph.svelte').Paragraph} block - The paragraph block that the strategy is applied to.
  */
 
 export const paragraphBackspaceStrategy = new Strategy(
@@ -19,6 +19,9 @@ export const paragraphBackspaceStrategy = new Strategy(
     /** @param {ParagraphBackspaceContext} context */
     (codex, context) => {
         // console.log('Executing paragraph backspace strategy');
+        const paragraph = context.block;
+        paragraph.log('Executing paragraph backspace strategy');
+        // TODO: Implement the logic to handle backspace in a paragraph block
     }
 )
 

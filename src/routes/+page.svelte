@@ -2,6 +2,7 @@
     import './global.css';
     import { Codex } from '$lib/states/codex.svelte';
     import { raw } from 'hono/html';
+    import History from '$lib/debug/History.svelte';
     
     
     const codex = new Codex();
@@ -46,6 +47,10 @@
             <!-- Position DOM -->
             <div class="section">
                 <h4>DOM Selection</h4>
+                <div class="row">
+                    <span class="label">Blocks in Selection</span>
+                    <span class="value">{selection.blocks.map(block => block.index).join(", ")}</span>
+                </div>
                 <div class="row">
                     <span class="label">Collapsed</span>
                     <span class="value">{selection.collapsed}</span>
@@ -103,6 +108,9 @@
         {:else}
         <p class="no-selection">No selection</p>
         {/if}
+
+
+        <!-- <History {codex} /> -->
     </div>
 </div>
 

@@ -1,6 +1,8 @@
 import { untrack } from 'svelte';
 import { SvelteSelection } from '$lib/utils/selection.svelte';
 import { findClosestParentIndex } from '$lib/utils/coordinates.utils';
+import { Children } from 'hono/jsx';
+import { MegaBlock } from './block.svelte';
 
 export class CodexSelection extends SvelteSelection {
     /** @param {import('./codex.svelte').Codex} codex */
@@ -8,12 +10,6 @@ export class CodexSelection extends SvelteSelection {
         super();
         this.codex = codex;
     }
-    
-    // /** @type {Selection?} */
-    // raw = $state(null);
-    
-    // /** @type {Range?} */
-    // range = $state(null);
     
     /** @type {Node?} */
     start = $derived(this.range?.startContainer || null);
@@ -29,6 +25,8 @@ export class CodexSelection extends SvelteSelection {
         }) || [];
         
         if (this.anchorOffset > 0) {
+            console.log(this.start?.childNodes);
+            
             const child = this.start?.childNodes?.[this.anchorOffset];
             if (!child) return blocks;
             const block = this.codex.recursive.filter(block => (block.element === child) || (block.element?.contains(child))).at(-1);
@@ -117,6 +115,23 @@ export class CodexSelection extends SvelteSelection {
     blocks = $derived.by(() => {
         const startBlock = this.startBlocks[0];
         const endBlock = this.endBlocks.at(-1);
+        const areSame = startBlock === endBlock;
+        // console.log("SELECTION BLOCKS", this.startBlock, this.endBlock);
+        
+        if (startBlock) {
+            const startOffset = this.startOffset;
+            const startChildren = Array.from(this.startBlock?.element?.childNodes || []).filter((child, index) => index >= startOffset);
+            if (startBlock instanceof MegaBlock) {
+                const c = startBlock.children.filter(child => startChildren.some(node =>
+                    node === child.element || child.element?.contains(node) || node.contains(child.element)
+                ));
+                // console.log("SPECIAL", 'Start children:', startChildren, 'Filtered children:', c);
+            }
+
+            //is there block children of the start block that contains some child nodes after the startOffset?
+            
+
+        }
         if (!startBlock || !endBlock) return [];
         const startIndex = this.codex.recursive.indexOf(startBlock);
         const endIndex = this.codex.recursive.indexOf(endBlock);
@@ -136,7 +151,7 @@ export class CodexSelection extends SvelteSelection {
         const commonIndex = findClosestParentIndex(start?.join('.'), end?.join('.'));
         const parent = this.codex.recursive.find(block => block.index === commonIndex);
         if (!parent) {
-            console.warn(`No common parent found for selection between ${start?.join('.')} and ${end?.join('.')}`);
+            // console.warn(`No common parent found for selection between ${start?.join('.')} and ${end?.join('.')}`);
             return null;
         }
         return parent;

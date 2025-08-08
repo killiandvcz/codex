@@ -14,7 +14,7 @@ import { CodexSelection } from './selection.svelte';
 import { Text as TextBlock } from './blocks/text.svelte';
 import LinebreakComponent from '$lib/components/Linebreak.svelte';
 import { TextSystem } from './systems/textSystem.svelte';
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { multiBlockBackspaceStrategy } from './strategies/multiBlockBackspace.svelte';
 
 export const initialComponents = {
@@ -62,6 +62,9 @@ export class Codex extends MegaBlock {
         this.components = init.components || initialComponents;
         
         this.selection = new CodexSelection(this);
+
+        /** @type {SvelteSet<import('./operations.svelte').Operation>} */
+        this.history = new SvelteSet();
         
         this.systems = new SvelteMap();
         for (const [name, System] of Object.entries(initialSystems)) {
@@ -103,13 +106,21 @@ export class Codex extends MegaBlock {
     
     /** @param {InputEvent} e */
     onbeforeinput = e => {
-        if (this.selection?.anchoredBlocks) {
-            this.selection.anchoredBlocks.forEach(block => {
-                const handler = block['onbeforeinput'];
-                if (handler && typeof handler === 'function') {
-                    handler(e);
+        let currentParent = this.selection?.parent;
+        if (currentParent && currentParent instanceof MegaBlock) {
+            while (currentParent) {
+                const strategy = currentParent.strategies?.filter(s => s.tags.includes('beforeinput')).find(s => s.canHandle(this, {event: e}));
+                if (strategy) {
+                    e.preventDefault();
+                    strategy.execute(this, {event: e, block: currentParent});
+                    return;
                 }
-            });
+                currentParent = currentParent.parent || (currentParent === this ? null : this);
+            }
+        } else if (currentParent) {
+            this.selection?.anchoredBlocks.forEach(block => block['onbeforeinput']?.(e));
+        } else {
+            console.warn('No current parent block found for beforeinput event');
         }
     }
     
@@ -132,21 +143,23 @@ export class Codex extends MegaBlock {
         let currentParent = this.selection?.parent;
         if (currentParent && currentParent instanceof MegaBlock) {
             while (currentParent) {
-                // console.log(`Checking strategies for keydown event on block "${currentParent.type}"`);
-                
                 const strategy = currentParent.strategies?.filter(s => s.tags.includes('keydown')).find(s => s.canHandle(this, context));
                 if (strategy) {
-                    // console.log(`Executing strategy "${strategy.name}" for keydown event on block "${currentParent.type}"`);
-                    
                     e.preventDefault();
-                    strategy.execute(this, context);
+                    strategy.execute(this, {...context, block: currentParent});
                     return;
                 }
                 currentParent = currentParent.parent || (currentParent === this ? null : this);
             }
         } else if (currentParent) {
-            // console.log(`No strategies found for keydown event on block "${currentParent.type}"`);
-            this.selection?.anchoredBlocks.forEach(block => block['onkeydown']?.(e));
+            const handlers = this.selection?.anchoredBlocks.map(block => block['onkeydown']).filter(handler => typeof handler === 'function');
+            let handler = handlers.at(-1);
+            const ascend = () => {
+                const hIndex = handlers.indexOf(handler);
+                if (hIndex > 0) handler = handlers[hIndex - 1];
+                handler(e, ascend);
+            };
+            handler(e, ascend);
         } else {
             console.log('No current parent block found for keydown event');
         }
