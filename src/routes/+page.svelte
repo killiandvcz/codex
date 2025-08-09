@@ -1,7 +1,6 @@
 <script>
     import './global.css';
     import { Codex } from '$lib/states/codex.svelte';
-    import { raw } from 'hono/html';
     import History from '$lib/debug/History.svelte';
     
     
@@ -14,7 +13,7 @@
 
 {#snippet section(block)}
 <div class="section">
-    <h4>{block.index} - {block.type} - {block.debug} {block.element ? "🔗" : ""}</h4>
+    <h4>{block.selected ? "👁️" : ""}({block.index}) {block.type} - {block.debug} {block.element ? "🔗" : ""}</h4>
     {#if block.children}
     <ul>
         {#each block.children as child (child.id)}
@@ -52,6 +51,10 @@
                     <span class="value">{selection.blocks.map(block => block.index).join(", ")}</span>
                 </div>
                 <div class="row">
+                    <span class="label">Endpoint in Selection</span>
+                    <span class="value">{selection.startBlock?.index || 'none'} - {selection.endBlock?.index || 'none'}</span>
+                </div>
+                <div class="row">
                     <span class="label">Collapsed</span>
                     <span class="value">{selection.collapsed}</span>
                 </div>
@@ -72,7 +75,6 @@
                     <span class="label">Chain</span>
                     <span class="value">{selection.parent?.path}</span>
                 </div>
-
                 <div class="row">
                     <span class="label">Start Container</span>
                     <span class="value">{selection.start?.nodeName || 'none'}</span>
@@ -81,6 +83,7 @@
                     <span class="label">Start Offset</span>
                     <span class="value">{selection.startOffset || '0'}</span>
                 </div>
+
                 <div class="row">
                     <span class="label">End Container</span>
                     <span class="value">{selection.end?.nodeName || 'none'}</span>

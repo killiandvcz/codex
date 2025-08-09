@@ -80,10 +80,10 @@ export class CodexSelection extends SvelteSelection {
         }
         return blocks;
     });
-
+    
     /**
-     * Endpoint start block in the selection.
-     */
+    * Endpoint start block in the selection.
+    */
     startBlock = $derived(this.startBlocks.at(-1) || null);
     
     endBlocks = $derived.by(() => {
@@ -103,48 +103,21 @@ export class CodexSelection extends SvelteSelection {
         }
         return blocks;
     });
-
+    
     /**     
-     * Endpoint end block in the selection.
-     */
+    * Endpoint end block in the selection.
+    */
     endBlock = $derived(this.endBlocks.at(-1) || null);
-
-    /** Every blocks in the selection (from head start to endpoint end) */
-    blocks = $derived.by(() => {
-        const startBlock = this.startBlocks[0];
-        const endBlock = this.endBlocks.at(-1);
-        console.log({startBlock, endBlock});
-        
-        const areSame = startBlock === endBlock;
-        // console.log("SELECTION BLOCKS", this.startBlock, this.endBlock);
-        
-        if (startBlock) {
-            const startOffset = this.startOffset;
-            const startChildren = Array.from(this.startBlock?.element?.childNodes || []).filter((child, index) => index >= startOffset);
-            if (startBlock instanceof MegaBlock) {
-                const c = startBlock.children.filter(child => startChildren.some(node =>
-                    node === child.element || child.element?.contains(node) || node.contains(child.element)
-                ));
-                // console.log("SPECIAL", 'Start children:', startChildren, 'Filtered children:', c);
-            }
-
-            //is there block children of the start block that contains some child nodes after the startOffset?
-            
-
-        }
-        if (!startBlock || !endBlock) return [];
-        const startIndex = this.codex.recursive.indexOf(startBlock);
-        const endIndex = this.codex.recursive.indexOf(endBlock);
-        if (startIndex === -1 || endIndex === -1) return [];
-        return this.codex.recursive.slice(startIndex, endIndex + 1);
-    });
-
+    
+    /** @type {import('./block.svelte').Block[]} */
+    blocks = $derived(this.codex?.recursive?.filter(block => block.selected));
+    
     length = $derived(this.blocks.length);
-
+    
     depth = $derived(this.blocks.sort((a, b) => a.depth - b.depth).at(-1)?.depth || 0);
-
+    
     isMultiBlock = $derived(this.startBlock !== this.endBlock);
-
+    
     parent = $derived.by(() => {
         const start = this.startBlock?.path
         const end = this.endBlock?.path;
@@ -179,6 +152,6 @@ export class CodexSelection extends SvelteSelection {
     }
     
     isInside = $derived(this.codex.element?.contains(this.start));
-
+    
 }
 

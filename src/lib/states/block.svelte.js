@@ -53,7 +53,7 @@ export class Block {
     /** @type {HTMLElement?} */
     element = $state(null);
     
-    selected = $derived(this.codex?.selection?.blocks.includes(this) || false);
+    selected = $derived(this.codex?.selection && this.element && this.codex.selection?.range?.intersectsNode(this.element));
     
     /** @type {Number} */
     depth = $derived(this.parent ? this.parent.depth + 1 : 0);

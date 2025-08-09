@@ -25,6 +25,9 @@ export class Linebreak extends Block {
     
     debug = $derived(`\\n (${this.start} - ${this.end}) [${this.offset}]`);
 
+    /** @type {Boolean} */
+    selected = $derived(super.selected || this.codex?.selection?.anchoredBlocks.includes(this) || false);
+
     
     
     /** @param {KeyboardEvent} e @param {Function} ascend */
