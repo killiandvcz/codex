@@ -25,8 +25,6 @@ export class CodexSelection extends SvelteSelection {
         }) || [];
         
         if (this.anchorOffset > 0) {
-            console.log(this.start?.childNodes);
-            
             const child = this.start?.childNodes?.[this.anchorOffset];
             if (!child) return blocks;
             const block = this.codex.recursive.filter(block => (block.element === child) || (block.element?.contains(child))).at(-1);
@@ -115,6 +113,8 @@ export class CodexSelection extends SvelteSelection {
     blocks = $derived.by(() => {
         const startBlock = this.startBlocks[0];
         const endBlock = this.endBlocks.at(-1);
+        console.log({startBlock, endBlock});
+        
         const areSame = startBlock === endBlock;
         // console.log("SELECTION BLOCKS", this.startBlock, this.endBlock);
         

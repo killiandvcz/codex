@@ -79,7 +79,7 @@
                 </div>
                 <div class="row">
                     <span class="label">Start Offset</span>
-                    <span class="value">{selection.raw?.anchorOffset || '0'}</span>
+                    <span class="value">{selection.startOffset || '0'}</span>
                 </div>
                 <div class="row">
                     <span class="label">End Container</span>
@@ -87,7 +87,7 @@
                 </div>
                 <div class="row">
                     <span class="label">End Offset</span>
-                    <span class="value">{selection.raw?.focusOffset || '0'}</span>
+                    <span class="value">{selection.endOffset || '0'}</span>
                 </div>
             </div>
         </div>

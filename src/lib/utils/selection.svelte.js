@@ -1,4 +1,24 @@
 /**
+* @typedef {{
+*   anchorNode: Node | null,
+*   anchorOffset: number,
+*   focusNode: Node | null,
+*   focusOffset: number,
+*   startNode: Node | null,
+*   startOffset: number,
+*   endNode: Node | null,
+*   endOffset: number,
+*   isCollapsed: boolean,
+*   rangeCount: number,
+*   type: string,
+*   direction: string,
+*   text: string,
+*   html: string
+* }} SelectionObject 
+*/
+
+
+/**
 * Utilitaire réactif pour gérer la sélection de texte avec Svelte 5 runes
 * @example
 * const selection = new SvelteSelection();
@@ -22,6 +42,8 @@ export class SvelteSelection {
                     this.#cleanup?.();
                 };
             });
+
+            $inspect(this.startOffset);
         });
     }
     
@@ -33,18 +55,7 @@ export class SvelteSelection {
     
     /** 
     * État interne de la sélection
-    * @type {{
-    *   anchorNode: Node | null,
-    *   anchorOffset: number,
-    *   focusNode: Node | null,
-    *   focusOffset: number,
-    *   isCollapsed: boolean,
-    *   rangeCount: number,
-    *   type: string,
-    *   direction: string,
-    *   text: string,
-    *   html: string
-    * }?} 
+    * @type {SelectionObject?}
     */
     #sel = $state(null);
     is = $derived(!!this.#sel);
@@ -61,10 +72,12 @@ export class SvelteSelection {
     rangeCount = $derived(this.#sel?.rangeCount ?? 0);
     type = $derived(this.#sel?.type ?? '');
     direction = $derived(this.#sel?.direction ?? 'none');
-    
-    startOffset = $derived(this.direction === 'forward' ? this.anchorOffset : this.focusOffset);
-    endOffset = $derived(this.direction === 'backward' ? this.anchorOffset : this.focusOffset);
-    
+
+    startNode = $derived(this.#sel?.startNode ?? null);
+    endNode = $derived(this.#sel?.endNode ?? null);
+    startOffset = $derived(this.#sel?.startOffset ?? 0);
+    endOffset = $derived(this.#sel?.endOffset ?? 0);
+
     // Propriétés des ranges
     ranges = $derived(this.#ranges);
     firstRange = $derived(this.#ranges[0] ?? null);
@@ -144,6 +157,7 @@ export class SvelteSelection {
             }
             this.#ranges = newRanges;
             
+            
             let text = '';
             let html = '';
             
@@ -160,12 +174,22 @@ export class SvelteSelection {
                     console.warn('Erreur lors de l\'extraction du contenu de la sélection:', error);
                 }
             }
-            
+
+            const range = this.raw.rangeCount > 0 ? this.raw.getRangeAt(0) : null;
+            console.log({range});
+
             this.#sel = {
+                //SEL
                 anchorNode: this.raw.anchorNode,
                 anchorOffset: this.raw.anchorOffset,
                 focusNode: this.raw.focusNode,
                 focusOffset: this.raw.focusOffset,
+                //RANGE:
+                startNode: range?.startContainer || null,
+                startOffset: range?.startOffset || 0,
+                endNode: range?.endContainer || null,
+                endOffset: range?.endOffset || 0,
+                //MISC
                 isCollapsed: this.raw.isCollapsed,
                 rangeCount: this.raw.rangeCount,
                 type: this.raw.type,
