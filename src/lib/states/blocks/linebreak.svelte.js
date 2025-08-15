@@ -1,3 +1,4 @@
+import { Focus } from "$lib/values/focus.values";
 import { Block, MegaBlock } from "../block.svelte";
 import { Text } from "./text.svelte";
 
@@ -19,8 +20,8 @@ export class Linebreak extends Block {
     /** @type {HTMLBRElement?} */
     element = $state(null);
     
-    start = $derived(this.before ? (this.before.end ?? 0) + 1 : 0);
-    end = $derived(this.start);
+    start = $derived(this.before ? (this.before.end ?? 0) : 0);
+    end = $derived(this.start + 1);
     
     /** 
      * The offset of the linebreak within its parent block. (Not reactive)
@@ -38,24 +39,21 @@ export class Linebreak extends Block {
     
     /** @param {KeyboardEvent} e @param {Function} ascend */
     onkeydown = (e, ascend) => {
-        if (e.key === 'Backspace') {
-            e.preventDefault();
-            if (this.selected) {
-                console.log('Backspace pressed on linebreak');
-                const parent = this.parent;
-                const previous = parent?.children?.find(child => child.index === this.index - 1);
-                console.log('Previous block:', previous);
-                console.log(previous === this);
+        ascend()
+        // if (e.key === 'Backspace') {
+        //     e.preventDefault();
+        //     if (this.selected) {
+        //         const parent = this.parent;
+        //         const previous = parent?.children?.find(child => child.index === this.index - 1);
                 
-                if (previous) {
-                    this.delete();
-                    previous.focus?.(-1, -1);
-                } else {
-                    // this.parent.onkeydown?.(e);
-                    ascend();
-                }
-            }
-        } else ascend()
+        //         if (previous) {
+        //             this.delete();
+        //             previous.focus?.(-1, -1);
+        //         } else {
+        //             ascend();
+        //         }
+        //     }
+        // } else ascend()
     }
     
     /** @param {InputEvent} e */
@@ -71,14 +69,7 @@ export class Linebreak extends Block {
                     } else {
                         this.parent.children.push(newText);
                     }
-                    const focus = () => requestAnimationFrame(() => {
-                        if (newText.element) {
-                            this.codex?.selection?.setRange(newText.element, e.data.length, newText.element, e.data.length);
-                        } else {
-                            focus();
-                        }
-                    })
-                    focus();
+                    newText.focus(new Focus(e.data.length, e.data.length));
                 }   
             } 
         }
@@ -90,24 +81,19 @@ export class Linebreak extends Block {
 
     delete = () => this.parent && (this.parent.children = this.parent?.children.filter(child => child !== this));
 
-    /** @param {Null} [s] @param {Null} [e] @param {Number} [attempts] */
-    focus = (s, e, attempts) => requestAnimationFrame(() => {  
-        if (this.element) {
+    /** @param {Focus} [f] @param {Number} [attempts=0] */
+    focus = (f, attempts = 0) => requestAnimationFrame(() => {
+        if (this.element && this.codex) {
             const strategy = this.parent?.strategies?.find(s => s.tags.includes('refocus'));
             if (strategy && strategy.canHandle(this.codex, { block: this })) {
-                console.log(`Executing strategy "${strategy.name}" for refocus on block "${this.type}"`);
-                
                 strategy.execute(this.codex, { block: this });
                 return;
             }
             const data = this.getFocusData();
             if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
         } else {
-            console.warn('Linebreak element is not available yet.');
-            if (attempts === undefined) attempts = 0;
-            if (attempts < 10) {
-                this.focus(null, null, attempts + 1);
-            }
+            attempts ??= 0
+            if (attempts < 10) this.focus(f, attempts + 1);
         }
     });
 

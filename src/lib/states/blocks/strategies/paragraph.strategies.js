@@ -1,4 +1,5 @@
 import { Strategy } from "$lib/states/strategy.svelte";
+import { Focus } from "$lib/values/focus.values";
 import { Linebreak } from "../linebreak.svelte";
 import { Text } from "../text.svelte";
 
@@ -62,7 +63,7 @@ export const paragraphDeleteStrategy = new Strategy(
                 const linebreak = new Linebreak(codex);
             } else {
                 const next = paragraph.split(data.startOffset);
-                next.focus(0, 0);
+                if (next) next.focus(new Focus(0, 0));
             }
         }
     }

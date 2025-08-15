@@ -3,6 +3,8 @@ import { Linebreak } from "./linebreak.svelte";
 import { Text } from "./text.svelte";
 import { paragraphStrategies } from "./strategies/paragraph.strategies";
 import { hasOnlyExpressionInitializer } from "typescript";
+import { preventDefault } from "svelte/legacy";
+import { Focus } from "$lib/values/focus.values";
 
 /** 
 * @typedef {(import('./text.svelte').TextObject|import('./linebreak.svelte').LinebreakObject)[]} ParagraphContent
@@ -16,6 +18,9 @@ import { hasOnlyExpressionInitializer } from "typescript";
 */
 
 
+/**
+ * @extends {MegaBlock<Text|Linebreak>}
+ */
 export class Paragraph extends MegaBlock {
     /**
     * @param {import('../codex.svelte').Codex} codex
@@ -42,8 +47,7 @@ export class Paragraph extends MegaBlock {
                 },
             },
             strategies: paragraphStrategies
-        })
-        
+        });
         
         
         $effect.root(() => {
@@ -71,7 +75,7 @@ export class Paragraph extends MegaBlock {
     /** @type {HTMLParagraphElement?} */
     element = $state(null);
     
-    debug = $derived(`Paragraph ${this.index} - ${this.selection.anchorOffset} - ${this.selection.focusOffset} [length: ${this.length}]`);
+    
     
     selection = $derived.by(() => {
         // Récupère la sélection globale du codex
@@ -134,7 +138,7 @@ export class Paragraph extends MegaBlock {
     }, 0));
     
     /** @type {Number} */
-    start = $derived(this.before ? (this.before.end ?? 0) + 1 : 0);
+    start = $derived(this.before ? (this.before?.end ?? 0) + 1 : 0);
     
     /** @type {Number} */
     end = $derived(this.start + this.length);
@@ -147,7 +151,9 @@ export class Paragraph extends MegaBlock {
     
     /** @param {KeyboardEvent} e */
     onkeydown = e => {
+        if (!this.codex) return;
         if (this.codex?.selection.collapsed) {
+            const child = this.children.find(c => c.selected);
             if (e.key === 'Enter') {
                 this.log('Enter pressed in paragraph:', this.index);
                 e.preventDefault();
@@ -156,6 +162,7 @@ export class Paragraph extends MegaBlock {
                     
                     /** @param {import('./linebreak.svelte').Linebreak} linebreak */
                     const handleLinebreak = linebreak => {
+                        if (!this.codex) return;
                         const blocksBefore = this.children.filter(child => child.index <= linebreak.index);
                         const blocksAfter = this.children.filter(child => child.index > linebreak.index);
                         const newLinebreak = new Linebreak(this.codex);
@@ -166,24 +173,13 @@ export class Paragraph extends MegaBlock {
                             ...blocksAfter,
                         ];
                         
-                        const focus = () => {
-                            requestAnimationFrame(() => {
-                                if (newLinebreak.element) {
-                                    this.codex?.selection?.setRange(newLinebreak.element, 0, newLinebreak.element, 0);
-                                } else {
-                                    console.warn('New linebreak element is not available yet.');
-                                    focus();
-                                }
-                            })
-                        }
-                        
-                        focus();
+                        newLinebreak.focus();
                     }
                     
                     if (block && block instanceof Linebreak) {
                         handleLinebreak(block);
                     } else if (block && block instanceof Text) {
-                        const offset = block instanceof Text && block.selection?.start;
+                        const offset = block.selection?.start;
                         this.log('Shift + Enter pressed in text block:', block, 'at offset:', offset);
                         if (offset === undefined || offset < 0) return;
                         if (offset > block.text.length) return;
@@ -195,17 +191,20 @@ export class Paragraph extends MegaBlock {
                                 newLinebreak,
                                 ...this.children.filter(child => child.index >= block.index),
                             ];
-                            block.focus(0);
+                            block.focus(new Focus(0, 0));
                         } else if (offset > 0 && offset < block.text.length) {
                             this.log('Split text block at offset:', offset);
                             const newText = block.split(offset);
-                            this.children = [
-                                ...this.children.filter(child => child.index <= block.index),
-                                newLinebreak,
-                                newText,
-                                ...this.children.filter(child => child.index > block.index),
-                            ];
-                            newText.focus(0);
+                            if (newText) {
+                                this.children = [
+                                    ...this.children.filter(child => child.index <= block.index),
+                                    newLinebreak,
+                                    newText,
+                                    ...this.children.filter(child => child.index > block.index),
+                                ];
+                                newText.focus(new Focus(0, 0));
+                            }
+                            
                         } else if (offset === block.text.length) {
                             const isLinebreakAfter = this.children[block.index + 1] instanceof Linebreak;
                             const add = 1;
@@ -215,35 +214,43 @@ export class Paragraph extends MegaBlock {
                                 newLinebreak,
                                 ...this.children.filter(child => child.index > block.index + add),
                             ];
-                            newLinebreak.focus(0);
+                            newLinebreak.focus(new Focus(0, 0));
                         }
                     }
                 } else {
                     const block = this.codex?.selection.anchoredBlock;
-                    const beforeBlocks = this.children.filter(child => child.index < block.index);
+                    const beforeBlocks = (block && this.children.filter(child => child.index < block.index)) || [];
                     const beforeOffset = beforeBlocks.reduce((acc, child) => acc + (child instanceof Text ? child.text.length : 1), 0);
                     const offset = (block instanceof Text ? this.codex?.selection.range?.startOffset || 0 : 1) + beforeOffset;
-                    
                     const p = this.split(offset);
-                    
-                    const focus = () => requestAnimationFrame(() => {
-                        if (p.element) {
-                            p.focus(0);
-                        } else {
-                            console.warn('New paragraph element is not available yet.');
-                            focus();
-                        }
-                    })
-                    focus();
+                    if (p) p.focus(new Focus(0, 0));
                 }
-            } else if (e.key === 'Backspace' ) {
+            } else if (e.key === 'Backspace') {
                 this.log('Backspace pressed in paragraph:', this.index);
+                e.preventDefault();
+                const previous = child && this.children.find(c => c.index === child.index - 1);
+                if (child instanceof Linebreak && previous) {
+                    previous.delete(-2, -1);
+                } else if (child instanceof Text && previous && child.selection?.start === 0) {
+                    previous.delete(-2, -1);
+                }
+            } else if (e.key === 'Delete') {
+                this.log('Delete pressed in paragraph:', this.index);
+                e.preventDefault();
+                const next = child && this.children.find(c => c.index === child.index + 1);
+                if (child instanceof Linebreak && next) {
+                    child.delete();
+                    next.focus?.(new Focus(0, 0));
+                } else if (child instanceof Text && next && child.selection?.end === child.text.length) {
+                    next.delete(0, 1);
+                }
             }
         }
     }
     
     
     normalize = () => {
+        if (!this.codex) return;
         /** @param {Number} blockIndex */
         const merge = (blockIndex) => {
             if (blockIndex >= this.children.length - 1) return;
@@ -276,12 +283,13 @@ export class Paragraph extends MegaBlock {
     
     /** @param {Number} offset */
     split = offset => {
+        if (!this.codex) return;
         this.log('Splitting paragraph at offset:', offset);
 
         const splittingBlock = this.children.find(child => offset >= child.start && offset <= child.end);
         this.log(JSON.stringify(this.children.map(c => ({...c.toJSON(), s: c.start, e: c.end })), null, 2));
         
-        const afterBlocks = this.children.filter(child => child.index > splittingBlock.index);
+        const afterBlocks = (splittingBlock && this.children.filter(child => child.index > splittingBlock.index)) || [];
         
         const startBlock = splittingBlock instanceof Text ? splittingBlock.split(offset - splittingBlock.start) : new Linebreak(this.codex);
         
@@ -337,6 +345,7 @@ export class Paragraph extends MegaBlock {
     * @param {Number} at 
     */
     generate = (content, at) => {
+        if (!this.codex) return;
         const blocks = [];
         for (const item of content) {
             if (item.type === 'linebreak') {
@@ -347,31 +356,26 @@ export class Paragraph extends MegaBlock {
         }
         this.join(blocks, at);
     }
-    
-    /** @param {Number} start @param {Number} end @param {Number} [attempts] */
-    focus = (start, end, attempts = 0) => requestAnimationFrame(() => {
-        if (this.element) {
-            const data = this.getFocusData(start, end);
-            if (data) {
-                console.log(`Focusing paragraph ${this.index} at start: ${start}, end: ${end}`);
-                this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
+
+    /** @param {Focus} f @param {Number} attempts */
+    focus = (f, attempts = 0) => requestAnimationFrame(() => {
+            if (this.element) {
+                const data = this.getFocusData(f);
+                if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
+                else console.warn('Could not get focus data for paragraph:', this);
             } else {
-                console.warn('Could not get focus data for paragraph:', this);
+                attempts ??= 0;
+                if (attempts < 10) this.focus(f, attempts + 1);
+                else console.error(`Failed to focus paragraph ${this.index} after 10 attempts.`);
             }
-        } else {
-            console.warn('Paragraph element is not available yet.');
-            if (attempts === undefined) attempts = 0;
-            if (attempts < 10) {
-                console.warn(`Retrying focus for paragraph ${this.index}... (${attempts + 1}/10)`);
-                this.focus(start, end, attempts + 1);
-            } else {
-                console.error(`Failed to focus paragraph ${this.index} after 10 attempts.`);
-            }
-        } 
     });
-    
-    /** @param {Number} start @param {Number} end */
-    getFocusData = (start, end) => {
+
+    /**
+     * @param {Focus} f
+     * @returns
+     */
+    getFocusData = (f) => {
+        let { start, end } = f;
         start ??= 0;
         end ??= start;
         if (start && start < 0) start = this.end + (start + 1);
@@ -384,12 +388,13 @@ export class Paragraph extends MegaBlock {
             end = 0;
         }
         
-        const startBlock = this.children.find(child => start >= child.start && start <= child.end);
-        const endBlock = this.children.find(child => end >= child.start && end <= child.end);
+        const startBlock = this.children.findLast(child => start >= child.start && start <= child.end);
+        const endBlock = this.children.findLast(child => end >= child.start && end <= child.end);
+        this.log(`Focus data for paragraph ${this.index}: start=${start}, end=${end}`, startBlock, endBlock);
         
-        const startData = startBlock ? startBlock.getFocusData(start, start) : null;
-        const endData = endBlock ? endBlock.getFocusData(end, end) : null;
-        
+        const startData = startBlock ? startBlock.getFocusData(new Focus(start, start)) : null;
+        const endData = endBlock ? endBlock.getFocusData(new Focus(end, end)) : null;
+
         if (startData && endData) {
             return {
                 startElement: startData.startElement,
@@ -402,4 +407,7 @@ export class Paragraph extends MegaBlock {
             return null;
         }
     }
+
+
+    debug = $derived(`Paragraph ${this.index} - ${this.selection.anchorOffset} - ${this.selection.focusOffset} [length: ${this.length}]`);
 }

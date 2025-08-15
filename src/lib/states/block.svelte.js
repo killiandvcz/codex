@@ -26,6 +26,7 @@ import Codex from '$lib/components/Codex.svelte';
  * @property {string} type - The type of the block (e.g., "paragraph", "text").
  */
 
+
 export class Block {
     /** @param {import('./codex.svelte').Codex?} codex @param {BlockManifest} manifest @param {string?} id */
     constructor(codex, manifest, id = null) {
@@ -120,6 +121,9 @@ export class Block {
     }
 }
 
+/**
+ * @template {Block} T
+ */
 export class MegaBlock extends Block {
     /** @param {import('./codex.svelte').Codex?} codex @param {MegaBlockManifest} manifest */
     constructor(codex, manifest) {
@@ -132,7 +136,7 @@ export class MegaBlock extends Block {
         this.strategies = manifest.strategies || [];
     }
     
-    /** @type {Block[]} */
+    /** @type {T[]} */
     children = $state([]);
     
     /** @type {Block[]} */

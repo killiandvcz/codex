@@ -1,6 +1,7 @@
 import { untrack } from 'svelte';
 import { Block } from '../block.svelte';
 import { TextInputOperation } from './operations/text.ops';
+import { Focus } from '$lib/values/focus.values';
 
 /** 
 * @typedef {Object} TextInit
@@ -84,7 +85,7 @@ export class Text extends Block {
     text = $state('');
     
     /** @type {Number} */
-    start = $derived(this.before ? (this.before.end ?? 0) + 1 : 0);
+    start = $derived(this.before ? (this.before.end ?? 0) : 0);
     /** @type {Number} */
     end = $derived(this.start + (this.text.length || 0));
     
@@ -147,22 +148,16 @@ export class Text extends Block {
             this.log(`Backspace/Delete pressed in text block at index ${this.index} with start ${start}`, this.codex?.selection.raw);
             if (this.selection && this.selection.length > 0) {
                 this.delete(this.selection.start, this.selection.end);
-                if (this.selection) this.focus(this.selection.start, this.selection.start);
-                else parent?.focus(start);
+                if (this.selection) this.focus(new Focus(this.selection.start, this.selection.start));
+                else parent?.focus(new Focus(start, start));
             } else if (this.selection && this.selection.start === 0 && e.key === "Backspace") {
-                if (this.before) {
-                    this.before.delete(-2, -1);
-                    this.before.focus(-1);
-                }
+                ascend();
             } else if (this.selection && this.selection.end === this.text.length && e.key === "Delete") {
-                if (this.after) {
-                    this.after.delete(0, 1);
-                    this.after.focus(0);
-                }
+                ascend();
             } else if (this.selection) {
                 this.delete(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start : this.selection.start + 1);
-                if (this.selection) this.focus(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start);
-                else parent?.focus(start);
+                if (this.selection) this.focus(new Focus(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start));
+                else parent?.focus(new Focus(start, start));
             }
         } else ascend()
     }
@@ -271,40 +266,32 @@ export class Text extends Block {
         this.resync();
         this.refresh();
         textBlock.delete(0, -1);
-        this.focus(end, end);
+        this.focus(new Focus(end, end));
     }
-    
-    /** 
-    * Focuses the text block at the specified start and end positions.
-    * @param {Number} [start] - The start position of the focus.
-    * @param {Number} [end] - The end position of the focus.
-    * @param {Number} [attempts=0] - The number of attempts to focus the block.
-    * If not provided, defaults to the start of the text block.
-    */
-    focus = (start, end, attempts) => requestAnimationFrame(() => {
+
+    /**
+     * @param {Focus} f 
+     * @param {Number} [attempts=0]
+     * @returns
+     */
+    focus = (f, attempts) => requestAnimationFrame(() => {
         if (this.element) {
-            const data = this.getFocusData(start, end);
-            if (data) {
-                this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
-            } else {
-                console.warn('Text focus data is not available yet.');
-                return;
-            }
+            const data = this.getFocusData(f);
+            if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset)
+            else console.warn('Text focus data is not available yet.');
         } else {
-            console.warn('Text element is not available yet.');
-            if (attempts === undefined) attempts = 0;
-            if (attempts < 10) {
-                this.focus(start, end, attempts + 1);
-            } else {
-                console.warn('Failed to focus text block after 10 attempts.');
-            }
+            attempts ??= 0;
+            if (attempts < 10) this.focus(f, attempts + 1)
+            else console.warn('Failed to focus text block after 10 attempts.');
         }
-    });
-    
-    /** @param {Number} [start] @param {Number} [end] */
-    getFocusData = (start, end) => {
-        start ??= 0;
-        end ??= start;
+    })
+
+    /**
+     * @param {Focus} f
+     * @returns
+     */
+    getFocusData = (f) => {
+        let { start, end } = f;
         if (start < 0) start = this.text.length + (start + 1);
         if (end < 0) end = this.text.length + (end + 1);
         if (start > this.text.length || end > this.text.length || start < 0 || end < 0) {
