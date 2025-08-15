@@ -20,6 +20,12 @@ import Codex from '$lib/components/Codex.svelte';
 * }} MegaBlockManifest
 */
 
+/**
+ * @typedef {Object} BlockObject
+ * @property {string} [id] - The unique identifier for the block.
+ * @property {string} type - The type of the block (e.g., "paragraph", "text").
+ */
+
 export class Block {
     /** @param {import('./codex.svelte').Codex?} codex @param {BlockManifest} manifest @param {string?} id */
     constructor(codex, manifest, id = null) {
@@ -65,6 +71,17 @@ export class Block {
     });
 
     
+
+    /**
+     * Removes the block from its parent.
+     */
+    rm = () => {
+        if (this.parent) {
+            this.parent.children = this.parent.children.filter(child => child !== this); 
+            return true;
+        }
+        return false;
+    }
     
     /** @type {Object<string, any>} */
     metadata = $state({});
@@ -93,6 +110,13 @@ export class Block {
             const prefix = `${this.type}-${this.index}`.toUpperCase();
             console.log(prefix, ...args);
         }
+    }
+
+    toJSON() {
+        return {
+            id: this.id,
+            type: this.type
+        };
     }
 }
 
@@ -124,4 +148,11 @@ export class MegaBlock extends Block {
     
     /** @param {import('./strategy.svelte').Strategy} strategy */
     addStrategy = strategy => this.strategies.push(strategy);
+
+    toJSON() {
+        return {
+            ...super.toJSON(),
+            children: this.children.map(child => child.toJSON())
+        };
+    }
 }

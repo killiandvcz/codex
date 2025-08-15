@@ -2,6 +2,19 @@ import { MegaBlock } from "../block.svelte";
 import { Linebreak } from "./linebreak.svelte";
 import { Text } from "./text.svelte";
 import { paragraphStrategies } from "./strategies/paragraph.strategies";
+import { hasOnlyExpressionInitializer } from "typescript";
+
+/** 
+* @typedef {(import('./text.svelte').TextObject|import('./linebreak.svelte').LinebreakObject)[]} ParagraphContent
+*/
+
+/**
+* @typedef {import('../block.svelte').BlockObject & {
+*  type: 'paragraph',
+*  children: ParagraphContent
+* }} ParagraphObject
+*/
+
 
 export class Paragraph extends MegaBlock {
     /**
@@ -45,7 +58,7 @@ export class Paragraph extends MegaBlock {
                     }
                 }
             })
-
+            
             $effect(() => {
                 if (this.element && this.children) {
                     const styles = this.children.map(child => child instanceof Text ? child.style : null).filter(style => style);
@@ -113,8 +126,8 @@ export class Paragraph extends MegaBlock {
             isPartialSelection: isAnchorInParagraph !== isFocusInParagraph // Sélection qui commence ou finit dans ce paragraphe
         };
     });
-
-
+    
+    
     /** @type {Number} */
     length = $derived(this.children.reduce((acc, child) => {
         return acc + (child instanceof Text ? child.text.length : 1);
@@ -125,7 +138,7 @@ export class Paragraph extends MegaBlock {
     
     /** @type {Number} */
     end = $derived(this.start + this.length);
-
+    
     
     /** @param {InputEvent} e */
     oninput = e => {
@@ -134,7 +147,7 @@ export class Paragraph extends MegaBlock {
     
     /** @param {KeyboardEvent} e */
     onkeydown = e => {
-        if (window.getSelection()?.isCollapsed) {
+        if (this.codex?.selection.collapsed) {
             if (e.key === 'Enter') {
                 this.log('Enter pressed in paragraph:', this.index);
                 e.preventDefault();
@@ -176,7 +189,7 @@ export class Paragraph extends MegaBlock {
                         if (offset > block.text.length) return;
                         const newLinebreak = new Linebreak(this.codex);
                         if (offset === 0) {
-        
+                            
                             this.children = [
                                 ...this.children.filter(child => child.index < block.index),
                                 newLinebreak,
@@ -195,7 +208,8 @@ export class Paragraph extends MegaBlock {
                             newText.focus(0);
                         } else if (offset === block.text.length) {
                             const isLinebreakAfter = this.children[block.index + 1] instanceof Linebreak;
-                            const add = isLinebreakAfter ? 1 : 2;
+                            const add = 1;
+                            this.log('Inserting linebreak after block:', block.index + add);
                             this.children = [
                                 ...this.children.filter(child => child.index <= block.index + add),
                                 newLinebreak,
@@ -227,8 +241,8 @@ export class Paragraph extends MegaBlock {
             }
         }
     }
-
-
+    
+    
     normalize = () => {
         /** @param {Number} blockIndex */
         const merge = (blockIndex) => {
@@ -236,6 +250,7 @@ export class Paragraph extends MegaBlock {
             const current = this.children[blockIndex];
             const next = this.children[blockIndex + 1];
             if (current instanceof Text && next instanceof Text && current.style === next.style && !current.link && !next.link) {
+                this.log(`Merging text blocks at index ${blockIndex} and ${blockIndex + 1}`);
                 current.merge(next);
                 this.children.splice(blockIndex + 1, 1);
                 merge(blockIndex);
@@ -254,9 +269,6 @@ export class Paragraph extends MegaBlock {
         }
     }
     
-
-
-    
     /** @param {Number} offset */
     truncate = (offset) => {
         
@@ -264,8 +276,10 @@ export class Paragraph extends MegaBlock {
     
     /** @param {Number} offset */
     split = offset => {
-        
+        this.log('Splitting paragraph at offset:', offset);
+
         const splittingBlock = this.children.find(child => offset >= child.start && offset <= child.end);
+        this.log(JSON.stringify(this.children.map(c => ({...c.toJSON(), s: c.start, e: c.end })), null, 2));
         
         const afterBlocks = this.children.filter(child => child.index > splittingBlock.index);
         
@@ -292,34 +306,50 @@ export class Paragraph extends MegaBlock {
     
     /**
     * @param {(Text | Linebreak)[]} children
-    * @param {Number} at
+    * @param {Number} [at]
+    * @param {'blocks'|'global'} [scope='blocks']
     */
-    join = (children, at) => {
-        at ??= this.children.length;
-        if (at < 0) at = this.children.length + at + 1;
-        if (at < 0 || at > this.children.length) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
+    join = (children, at, scope = "blocks") => {
         if (children.length === 0) return;
-        if (children.some(child => !(child instanceof Text || child instanceof Linebreak))) {
-            throw new Error(`Invalid children types for joining in paragraph ${this.index}. Expected Text or Linebreak.`);
+        if (children.some(child => !(child instanceof Text || child instanceof Linebreak))) throw new Error(`Invalid children types for joining in paragraph ${this.index}. Expected Text or Linebreak.`);
+
+        if (scope === 'blocks') {
+            at ??= this.children.length;
+            if (at < 0) at = this.children.length + at + 1;
+            if (at < 0 || at > this.children.length) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
+
+            this.children = [
+                ...this.children.slice(0, at),
+                ...children,
+                ...this.children.slice(at),
+            ];
+        } else if (scope === 'global') {
+            at ??= this.children.at(-1)?.end;
+            const child = this.children.find(c => c.start <= at || c.end >= at);
+            if (!child) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
+            
         }
-        
-        this.children = [
-            ...this.children.slice(0, at),
-            ...children,
-            ...this.children.slice(at),
-        ];
-        
-        // for (const child of children) {
-        //     if (!(child instanceof Text || child instanceof Linebreak)) {
-        //         throw new Error(`Invalid child type: ${child.constructor.name}. Expected Text or Linebreak.`);
-        //     }
-        //     this.children.push(child);
-        // }
     }
     
+    /**
+    * Generates a new blocks from the given content.
+    * @param {ParagraphContent} content 
+    * @param {Number} at 
+    */
+    generate = (content, at) => {
+        const blocks = [];
+        for (const item of content) {
+            if (item.type === 'linebreak') {
+                blocks.push(new Linebreak(this.codex));
+            } else if (item.type === 'text') {
+                blocks.push(new Text(this.codex, item));
+            }
+        }
+        this.join(blocks, at);
+    }
     
-    /** @param {Number} start @param {Number} end @param {Number} attempts */
-    focus = (start, end, attempts) => requestAnimationFrame(() => {
+    /** @param {Number} start @param {Number} end @param {Number} [attempts] */
+    focus = (start, end, attempts = 0) => requestAnimationFrame(() => {
         if (this.element) {
             const data = this.getFocusData(start, end);
             if (data) {
@@ -339,27 +369,27 @@ export class Paragraph extends MegaBlock {
             }
         } 
     });
-
+    
     /** @param {Number} start @param {Number} end */
     getFocusData = (start, end) => {
         start ??= 0;
         end ??= start;
         if (start && start < 0) start = this.end + (start + 1);
         if (end && end < 0) end = this.end + (end + 1);
-
-
+        
+        
         if (start < 0 || end < 0 || start > this.end || end > this.end) {
             console.warn(`Invalid focus range: start=${start}, end=${end} for paragraph ${this.index}. Resetting to 0.`);
             start = 0;
             end = 0;
         }
-
+        
         const startBlock = this.children.find(child => start >= child.start && start <= child.end);
         const endBlock = this.children.find(child => end >= child.start && end <= child.end);
-
+        
         const startData = startBlock ? startBlock.getFocusData(start, start) : null;
         const endData = endBlock ? endBlock.getFocusData(end, end) : null;
-
+        
         if (startData && endData) {
             return {
                 startElement: startData.startElement,
@@ -372,6 +402,4 @@ export class Paragraph extends MegaBlock {
             return null;
         }
     }
-    
-    
 }

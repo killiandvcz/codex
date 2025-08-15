@@ -1,6 +1,13 @@
 import { Block, MegaBlock } from "../block.svelte";
 import { Text } from "./text.svelte";
 
+/**
+ * @typedef {import('../block.svelte').BlockObject & {
+ *  type: 'linebreak'
+ * }} LinebreakObject
+ */
+
+
 export class Linebreak extends Block {
     /** @param {import('../codex.svelte').Codex} codex */
     constructor(codex) {
@@ -27,7 +34,6 @@ export class Linebreak extends Block {
 
     /** @type {Boolean} */
     selected = $derived(super.selected || this.codex?.selection?.anchoredBlocks.includes(this) || false);
-
     
     
     /** @param {KeyboardEvent} e @param {Function} ascend */

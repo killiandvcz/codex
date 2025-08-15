@@ -17,6 +17,10 @@ import { TextInputOperation } from './operations/text.ops';
 * @property {Boolean} [code] - Whether the text should be formatted as code.
 */
 
+/**
+ * @typedef {import('../block.svelte').BlockObject & TextInit & {type: 'text'}} TextObject
+ */
+
 export class Text extends Block {
     /** 
     * @param {import('../codex.svelte').Codex} codex
@@ -247,17 +251,7 @@ export class Text extends Block {
             throw new Error(`Invalid range from ${from} to ${to} for text "${this.text}".`);
         }
         this.text = this.text.slice(0, from) + this.text.slice(to);
-        if (!this.text.trim()) {
-            // If the text is empty, we might want to remove the block
-            if (this.parent && this.parent.children) {
-                const index = this.parent.children.indexOf(this);
-                if (index !== -1) {
-                    this.parent.children.splice(index, 1);
-                    return true;
-                }
-            }
-            return false; // No need to resync or refresh if the block is removed
-        }
+        if (!this.text.trim()) { return this.rm() };
         this.resync();
         this.refresh();
         return false; // Block was deleted
@@ -307,10 +301,6 @@ export class Text extends Block {
         }
     });
     
-    
-    
-    
-    
     /** @param {Number} [start] @param {Number} [end] */
     getFocusData = (start, end) => {
         start ??= 0;
@@ -337,5 +327,21 @@ export class Text extends Block {
             console.warn('Text element is not available yet.');
             return;
         }
+    }
+
+
+    /** @returns {TextObject} */
+    toJSON() {
+        return {
+            ...super.toJSON(),
+            type: 'text',
+            text: this.text,
+            ...(this.link ? { link: this.link } : {}),
+            bold: this.bold,
+            italic: this.italic,
+            underline: this.underline,
+            strikethrough: this.strikethrough,
+            code: this.code,
+        };
     }
 }

@@ -3,35 +3,76 @@ import { Linebreak } from "../linebreak.svelte";
 import { Text } from "../text.svelte";
 
 /**
- * @typedef {Object} ParagraphBackspaceContext
- * @property {KeyboardEvent} event - The keyboard event that triggered the strategy.
- * @property {import('../paragraph.svelte').Paragraph} block - The paragraph block that the strategy is applied to.
- */
+* 
+* @param {import('../paragraph.svelte').Paragraph} paragraph 
+* @param {import('../paragraph.svelte').ParagraphContent} [content] 
+*/
+const replace = (paragraph, content) => {
+    
+    /** @type {import('../text.svelte').Text|import('../linebreak.svelte').Linebreak} */
+    const start = paragraph.children.find(child => child.selected);
+    paragraph.log('Found start child:', start);
+    /** @type {import('../text.svelte').Text|import('../linebreak.svelte').Linebreak} */
+    const end = paragraph.children.findLast(child => child.selected);
+    paragraph.log('Found end child:', end);
 
-export const paragraphBackspaceStrategy = new Strategy(
-    'paragraph-backspace-strategy',
-    /** @param {ParagraphBackspaceContext} context */
+    const between = paragraph.children.slice(paragraph.children.indexOf(start) + 1, paragraph.children.indexOf(end));
+    paragraph.log('Found children between:', between);
+
+    const data = {
+        startOffset: start.start + (start instanceof Text ? start.selection?.start : 0),
+        endOffset: end.start + (end instanceof Text ? end.selection?.end : 0)
+    }
+
+    const startIndex = paragraph.children.indexOf(start);
+
+    between.forEach(b => b.rm());
+
+    if (content) paragraph.generate(content, startIndex);
+    end instanceof Linebreak ? end.rm() : end.delete(0, end.selection?.end || -1);
+    start instanceof Linebreak ? start.rm() : start.delete(start.selection?.start || 0, -1);
+
+    
+
+    return data;
+}
+
+/**
+* @typedef {Object} ParagraphKeydownContext
+* @property {KeyboardEvent} event - The keyboard event that triggered the strategy.
+* @property {import('../paragraph.svelte').Paragraph} block - The paragraph block that the strategy is applied to.
+*/
+
+export const paragraphDeleteStrategy = new Strategy(
+    'paragraph-delete-strategy',
+    /** @param {ParagraphKeydownContext} context */
     (codex, context) => {
-        if (context.event.key !== 'Backspace') return false;
+        if (!['Delete', 'Backspace', 'Enter'].includes(context.event.key)) return false;
         if (!codex.selection.isMultiBlock) return false;
         return true;
     },
-    /** @param {ParagraphBackspaceContext} context */
+    /** @param {ParagraphKeydownContext} context */
     (codex, context) => {
-        // console.log('Executing paragraph backspace strategy');
         const paragraph = context.block;
-        paragraph.log('Executing paragraph backspace strategy');
-        // TODO: Implement the logic to handle backspace in a paragraph block
-    }
-)
+        paragraph.log('Executing paragraph delete strategy');
+        const data = replace(paragraph);
 
-paragraphBackspaceStrategy.tag('backspace').tag('paragraph').tag('keydown')
+        if (context.event.key === 'Enter') {
+            if (context.event.shiftKey) {
+                const linebreak = new Linebreak(codex);
+            } else {
+                const next = paragraph.split(data.startOffset);
+                next.focus(0, 0);
+            }
+        }
+    }
+).tag('paragraph').tag('keydown').tag('delete').tag('backspace').tag('enter');
 
 /**
- * @typedef {Object} ParagraphRefocusContext
- * @property {import('../paragraph.svelte').Paragraph} paragraph - The paragraph block that the strategy is applied to.
- * @property {import('../../block.svelte').Block} block - The block that the strategy is applied to.
- */
+* @typedef {Object} ParagraphRefocusContext
+* @property {import('../paragraph.svelte').Paragraph} paragraph - The paragraph block that the strategy is applied to.
+* @property {import('../../block.svelte').Block} block - The block that the strategy is applied to.
+*/
 export const paragraphRefocusStrategy = new Strategy(
     'paragraph-refocus-strategy',
     /** @param {ParagraphRefocusContext} context */
@@ -55,13 +96,39 @@ export const paragraphRefocusStrategy = new Strategy(
         }
         
     }
-
+    
 ).tag('refocus').tag('paragraph').tag('linebreak')
 
 
 
+/**
+ * @typedef {Object} ParagraphBeforeInputContext
+ * @property {InputEvent} event - The input event that triggered the strategy.
+ * @property {import('../paragraph.svelte').Paragraph} block - The paragraph block that the strategy is applied to.
+ */
+export const paragraphBeforeInputStrategy = new Strategy(
+    'paragraph-beforeinput-strategy',
+    (codex, context) => {
+        return true;
+        // if (context.event.inputType === 'insertText') {
+        //     return true;
+        // }
+        // return false;
+    },
+    (codex, context) => {
+        /** @type {ParagraphBeforeInputContext} */
+        const { event, block } = context;
+        event.preventDefault();
+        if (event.inputType === 'insertText') {
+            
+            
+        }
+    }
+).tag('beforeinput')
+
 
 export const paragraphStrategies = [
-    paragraphBackspaceStrategy,
-    paragraphRefocusStrategy
+    paragraphDeleteStrategy,
+    paragraphRefocusStrategy,
+    paragraphBeforeInputStrategy
 ];
