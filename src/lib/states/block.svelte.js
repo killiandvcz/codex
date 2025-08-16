@@ -11,6 +11,7 @@ import Codex from '$lib/components/Codex.svelte';
 * @typedef {Object} BlockManifest
 * @property {string} type - The type of block (e.g., "paragraph", "text", "linebreak").
 * @property {Object<string, BlockOperation>} [operations] - A map of operation types to their handlers.
+* @property {import('./capability.svelte').Capability[]} capabilities - The capabilities of the block.
 */
 
 /**
@@ -34,8 +35,15 @@ export class Block {
         this.id = $state(id || crypto.randomUUID());
         this.manifest = $state(manifest);
         this.type = $derived(this.manifest?.type || "block");
+
+        this.capabilities = new Set();
+        if (manifest.capabilities) {
+            for (const capability of manifest.capabilities) {
+                this.capabilities.add(capability);
+            }
+        }
     }
-    
+
     /** @type {import('svelte').Component?} */
     component = $derived(this.codex?.components[this.type] || null);
     
@@ -71,7 +79,8 @@ export class Block {
         else return [];
     });
 
-    
+    /** @param {Capability} capability */
+    can = capability => this.capabilities.has(capability)
 
     /**
      * Removes the block from its parent.
@@ -122,7 +131,7 @@ export class Block {
 }
 
 /**
- * @template {Block} T
+ * @template {Block} [T=Block]
  */
 export class MegaBlock extends Block {
     /** @param {import('./codex.svelte').Codex?} codex @param {MegaBlockManifest} manifest */

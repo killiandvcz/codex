@@ -40,20 +40,6 @@ export class Linebreak extends Block {
     /** @param {KeyboardEvent} e @param {Function} ascend */
     onkeydown = (e, ascend) => {
         ascend()
-        // if (e.key === 'Backspace') {
-        //     e.preventDefault();
-        //     if (this.selected) {
-        //         const parent = this.parent;
-        //         const previous = parent?.children?.find(child => child.index === this.index - 1);
-                
-        //         if (previous) {
-        //             this.delete();
-        //             previous.focus?.(-1, -1);
-        //         } else {
-        //             ascend();
-        //         }
-        //     }
-        // } else ascend()
     }
     
     /** @param {InputEvent} e */

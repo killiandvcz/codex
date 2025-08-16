@@ -42,8 +42,6 @@ export class SvelteSelection {
                     this.#cleanup?.();
                 };
             });
-
-            $inspect(this.startOffset);
         });
     }
     
@@ -176,7 +174,6 @@ export class SvelteSelection {
             }
 
             const range = this.raw.rangeCount > 0 ? this.raw.getRangeAt(0) : null;
-            console.log({range});
 
             this.#sel = {
                 //SEL

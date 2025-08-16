@@ -2,8 +2,7 @@ import { MegaBlock } from "../block.svelte";
 import { Linebreak } from "./linebreak.svelte";
 import { Text } from "./text.svelte";
 import { paragraphStrategies } from "./strategies/paragraph.strategies";
-import { hasOnlyExpressionInitializer } from "typescript";
-import { preventDefault } from "svelte/legacy";
+import { MERGEABLE, MergeData } from "../capabilities/merge.capability";
 import { Focus } from "$lib/values/focus.values";
 
 /** 
@@ -46,7 +45,8 @@ export class Paragraph extends MegaBlock {
                     handler: 'delete'
                 },
             },
-            strategies: paragraphStrategies
+            strategies: paragraphStrategies,
+            capabilities: [ MERGEABLE ]
         });
         
         
@@ -69,7 +69,11 @@ export class Paragraph extends MegaBlock {
                     if (styles) this.normalize();
                 }
             })
+
+            $inspect(this.children);
         });
+
+        
     }
     
     /** @type {HTMLParagraphElement?} */
@@ -229,10 +233,24 @@ export class Paragraph extends MegaBlock {
                 this.log('Backspace pressed in paragraph:', this.index);
                 e.preventDefault();
                 const previous = child && this.children.find(c => c.index === child.index - 1);
-                if (child instanceof Linebreak && previous) {
-                    previous.delete(-2, -1);
-                } else if (child instanceof Text && previous && child.selection?.start === 0) {
-                    previous.delete(-2, -1);
+                if (child instanceof Linebreak) {
+                    if (previous) previous.delete(-2, -1);
+                    else {
+                        const previous = this.parent?.children.findLast(c => c.index < this.index && c.capabilities.has(MERGEABLE));
+                        this.log('Merging with previous block:', previous);
+                        previous?.merge?.(new MergeData(this.children.slice(0, -1), -1));
+                        this.rm();
+                    }
+                    
+                } else if (child instanceof Text && child.selection?.start === 0) {
+                    if (previous) {
+                        previous.delete(-2, -1);
+                    } else {
+                        const previous = this.parent?.children.findLast(c => c.index < this.index && c.capabilities.has(MERGEABLE));
+                        this.log('Merging with previous block:', previous, 'with children:', this.children);
+                        previous?.merge?.(new MergeData(this.children.slice(0, -1), -1));
+                        this.rm();
+                    }
                 }
             } else if (e.key === 'Delete') {
                 this.log('Delete pressed in paragraph:', this.index);
@@ -259,7 +277,7 @@ export class Paragraph extends MegaBlock {
             if (current instanceof Text && next instanceof Text && current.style === next.style && !current.link && !next.link) {
                 this.log(`Merging text blocks at index ${blockIndex} and ${blockIndex + 1}`);
                 current.merge(next);
-                this.children.splice(blockIndex + 1, 1);
+                this.children = this.children.filter(c => c !== next);
                 merge(blockIndex);
             } else {
                 merge(blockIndex + 1);
@@ -311,7 +329,6 @@ export class Paragraph extends MegaBlock {
         return newParagraph;
     }
     
-    
     /**
     * @param {(Text | Linebreak)[]} children
     * @param {Number} [at]
@@ -326,19 +343,34 @@ export class Paragraph extends MegaBlock {
             if (at < 0) at = this.children.length + at + 1;
             if (at < 0 || at > this.children.length) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
 
+            this.log(`Joining ${children.length} children at index ${at} in paragraph ${this.index}.`);
             this.children = [
                 ...this.children.slice(0, at),
                 ...children,
                 ...this.children.slice(at),
             ];
+            this.log('After: ', this.children);
         } else if (scope === 'global') {
             at ??= this.children.at(-1)?.end;
             const child = this.children.find(c => c.start <= at || c.end >= at);
             if (!child) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
-            
         }
     }
-    
+
+    /** @param {import('../capabilities/merge.capability').MergeData} data */
+    merge = data => {
+        /** @type {(Text | Linebreak)[]} */
+        const blocks = data.blocks.filter(block => block instanceof Text || block instanceof Linebreak);
+        this.log('Merging blocks:', blocks);
+        // if (blocks.length === 0) return;
+        const offset = this.end;
+        this.join(blocks, data.at - 1);
+        this.log('After merge:', this.children);
+        this.focus(new Focus(offset, offset));
+
+        
+    }
+
     /**
     * Generates a new blocks from the given content.
     * @param {ParagraphContent} content 
@@ -359,6 +391,7 @@ export class Paragraph extends MegaBlock {
 
     /** @param {Focus} f @param {Number} attempts */
     focus = (f, attempts = 0) => requestAnimationFrame(() => {
+        this.log('Focusing paragraph:', this.index, 'with focus:', f);
             if (this.element) {
                 const data = this.getFocusData(f);
                 if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
@@ -391,9 +424,9 @@ export class Paragraph extends MegaBlock {
         const startBlock = this.children.findLast(child => start >= child.start && start <= child.end);
         const endBlock = this.children.findLast(child => end >= child.start && end <= child.end);
         this.log(`Focus data for paragraph ${this.index}: start=${start}, end=${end}`, startBlock, endBlock);
-        
-        const startData = startBlock ? startBlock.getFocusData(new Focus(start, start)) : null;
-        const endData = endBlock ? endBlock.getFocusData(new Focus(end, end)) : null;
+
+        const startData = startBlock ? startBlock.getFocusData(new Focus(start - startBlock.start, start - startBlock.start)) : null;
+        const endData = endBlock ? endBlock.getFocusData(new Focus(end - endBlock.start, end - endBlock.start)) : null;
 
         if (startData && endData) {
             return {
