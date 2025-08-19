@@ -115,7 +115,6 @@ export class Text extends Block {
                 startOffset = 0;
             } else if (selection?.startBlock?.index === this.index) {
                 startOffset = selection?.startOffset ?? 0;
-                this.log(`Selection start offset: ${startOffset} in text block at index ${this.index}`);
             }
             
             if (selection?.endBlock?.index > this.index) {
@@ -141,11 +140,12 @@ export class Text extends Block {
     /** @param {KeyboardEvent} e @param {Function} ascend */
     onkeydown = (e, ascend) => {
         if (e.key === 'Backspace' || e.key === 'Delete') {
-            this.log('Backspace/Delete pressed in text block:', this);
+            // this.log('Backspace/Delete pressed in text block:', this);
             e.preventDefault();
             const parent = this.parent;
             const start = this.start;
-            this.log(`Backspace/Delete pressed in text block at index ${this.index} with start ${start}`, this.codex?.selection.raw);
+            const end = this.end;
+            // this.log(`Backspace/Delete pressed in text block at index ${this.index} with start ${start}`, this.codex?.selection.raw);
             if (this.selection && this.selection.length > 0) {
                 this.delete(this.selection.start, this.selection.end);
                 if (this.selection) this.focus(new Focus(this.selection.start, this.selection.start));
@@ -157,7 +157,7 @@ export class Text extends Block {
             } else if (this.selection) {
                 this.delete(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start : this.selection.start + 1);
                 if (this.selection) this.focus(new Focus(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start));
-                else parent?.focus(new Focus(start, start));
+                else parent?.focus(new Focus(end, end));
             }
         } else ascend()
     }
@@ -174,7 +174,6 @@ export class Text extends Block {
     
     /** @param {InputEvent} e */
     onbeforeinput = e => {
-        console.warn('Text beforeinput', e);
         if (e.inputType === 'insertText' && e.data) {
             const operation = new TextInputOperation(this, e.data, this.selection?.start || 0);
             this.codex?.history?.add(operation);
@@ -238,6 +237,7 @@ export class Text extends Block {
     * @returns {Boolean} Returns true if the block was deleted, false otherwise.
     */
     delete = (from, to) => {
+        this.log('DELETE', { from, to });
         if (from === to) return false; // No-op if the range is empty
         if (from < 0) from = this.text.length + (from + 1);
         if (to < 0) to = this.text.length + (to + 1);
@@ -266,7 +266,7 @@ export class Text extends Block {
         this.resync();
         this.refresh();
         textBlock.delete(0, -1);
-        this.focus(new Focus(end, end));
+        // this.focus(new Focus(end, end));
     }
 
     /**

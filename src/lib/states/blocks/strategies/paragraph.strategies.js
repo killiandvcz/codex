@@ -12,28 +12,27 @@ const replace = (paragraph, content) => {
     
     /** @type {import('../text.svelte').Text|import('../linebreak.svelte').Linebreak} */
     const start = paragraph.children.find(child => child.selected);
-    paragraph.log('Found start child:', start);
     /** @type {import('../text.svelte').Text|import('../linebreak.svelte').Linebreak} */
     const end = paragraph.children.findLast(child => child.selected);
-    paragraph.log('Found end child:', end);
 
     const between = paragraph.children.slice(paragraph.children.indexOf(start) + 1, paragraph.children.indexOf(end));
-    paragraph.log('Found children between:', between);
 
     const data = {
         startOffset: start.start + (start instanceof Text ? start.selection?.start : 0),
-        endOffset: end.start + (end instanceof Text ? end.selection?.end : 0)
+        endOffset: end.start + (end instanceof Text ? end.selection?.end : 0),
+        startSelection: start.selection?.start || 0,
+        endSelection: end.selection?.end || 0
     }
 
-    const startIndex = paragraph.children.indexOf(start);
+    
 
     between.forEach(b => b.rm());
 
-    if (content) paragraph.generate(content, startIndex);
-    end instanceof Linebreak ? end.rm() : end.delete(0, end.selection?.end || -1);
-    start instanceof Linebreak ? start.rm() : start.delete(start.selection?.start || 0, -1);
+    end instanceof Linebreak ? end.rm() : end.delete(0, data.endSelection || -1);
+    start instanceof Linebreak ? start.rm() : start.delete(data.startSelection || 0, -1);
 
-    
+    if (content) paragraph.generate(content, data.startOffset, 'global');
+    if (content) paragraph.focus(new Focus(data.startOffset + 1, data.startOffset + 1));
 
     return data;
 }
@@ -55,7 +54,6 @@ export const paragraphDeleteStrategy = new Strategy(
     /** @param {ParagraphKeydownContext} context */
     (codex, context) => {
         const paragraph = context.block;
-        paragraph.log('Executing paragraph delete strategy');
         const data = replace(paragraph);
 
         if (context.event.key === 'Enter') {
@@ -88,7 +86,6 @@ export const paragraphRefocusStrategy = new Strategy(
     },
     /** @param {ParagraphRefocusContext} context */
     (codex, context) => {
-        console.log('Executing paragraph refocus strategy');
         if (context.block instanceof Linebreak) {
             const before = context.block.before;
             if (before instanceof Text) {
@@ -121,8 +118,14 @@ export const paragraphBeforeInputStrategy = new Strategy(
         const { event, block } = context;
         event.preventDefault();
         if (event.inputType === 'insertText') {
-            
-            
+            block.log('Before input event:', event);
+
+            if (event.data) {
+                const data = replace(block, [{
+                    type: 'text',
+                    text: event.data || '',
+                }])
+            }
         }
     }
 ).tag('beforeinput')

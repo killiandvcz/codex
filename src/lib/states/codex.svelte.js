@@ -120,7 +120,7 @@ export class Codex extends MegaBlock {
         } else if (currentParent) {
             this.selection?.anchoredBlocks.forEach(block => block['onbeforeinput']?.(e));
         } else {
-            console.warn('No current parent block found for beforeinput event');
+            // console.warn('No current parent block found for beforeinput event');
             e.preventDefault();
         }
     }
@@ -162,7 +162,7 @@ export class Codex extends MegaBlock {
             };
             handler(e, ascend);
         } else {
-            console.log('No current parent block found for keydown event');
+            // console.log('No current parent block found for keydown event');
             // e.preventDefault();
         }
     }

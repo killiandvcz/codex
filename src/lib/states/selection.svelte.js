@@ -146,6 +146,9 @@ export class CodexSelection extends SvelteSelection {
         const range = document.createRange();
         range.setStart(startNode, startOffset);
         range.setEnd(endNode, endOffset);
+
+        // console.log('RANGE', range);
+        // console.trace();
         
         this.removeAllRanges();
         this.addRange(range);

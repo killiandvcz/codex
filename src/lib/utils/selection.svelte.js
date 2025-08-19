@@ -512,7 +512,6 @@ export class SvelteSelection {
                     // Debounce pour éviter trop d'appels
                     clearTimeout(this.#debounceTimer);
                     this.#debounceTimer = setTimeout(() => {
-                        console.log('DOM mutation detected, updating selection');
                         this.#updateSelection();
                     }, debounceMs);
                 });
