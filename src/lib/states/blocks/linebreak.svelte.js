@@ -36,11 +36,8 @@ export class Linebreak extends Block {
     /** @type {Boolean} */
     selected = $derived(super.selected || this.codex?.selection?.anchoredBlocks.includes(this) || false);
     
-    
     /** @param {KeyboardEvent} e @param {Function} ascend */
-    onkeydown = (e, ascend) => {
-        ascend()
-    }
+    onkeydown = (e, ascend) => ascend();
     
     /** @param {InputEvent} e */
     onbeforeinput = e => {

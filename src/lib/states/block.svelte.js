@@ -64,7 +64,13 @@ export class Block {
     
     /** @type {Block?} */
     after = $derived((this.index && this.parent instanceof MegaBlock && this.parent.children?.find(b => b.index === this.index + 1)) || null);
+
+    /** @type {Boolean} */
+    first = $derived(this.parent?.children[0] === this);
     
+    /** @type {Boolean} */
+    last = $derived(this.parent?.children[this.parent.children.length - 1] === this);
+
     /** @type {HTMLElement?} */
     element = $state(null);
     

@@ -77,8 +77,6 @@ export class Paragraph extends MegaBlock {
     /** @type {HTMLParagraphElement?} */
     element = $state(null);
     
-    
-    
     selection = $derived.by(() => {
         // Récupère la sélection globale du codex
         const globalSelection = this.codex?.selection;
@@ -224,10 +222,10 @@ export class Paragraph extends MegaBlock {
                         }
                     }
                 } else {
-                    const block = this.codex?.selection.anchoredBlock;
+                    const block = this.children.find(c => c.selected);
+                    if (!block) return;
                     const beforeBlocks = (block && this.children.filter(child => child.index < block.index)) || [];
-                    const beforeOffset = beforeBlocks.reduce((acc, child) => acc + (child instanceof Text ? child.text.length : 1), 0);
-                    const offset = (block instanceof Text ? this.codex?.selection.range?.startOffset || 0 : 1) + beforeOffset;
+                    const offset = block.start + (block instanceof Text ? (block.selection?.start || 0) : 0);
                     const p = this.split(offset);
                     if (p) p.focus(new Focus(0, 0));
                 }
@@ -244,21 +242,8 @@ export class Paragraph extends MegaBlock {
                     this.log('Merging with previous block:', previous);
                     previous?.merge?.(new MergeData(this.children.slice(0, -1), -1));
                     this.rm();
+                    // previous?.focus?.(new Focus(-1, -1));
                 }
-                
-                // if (child instanceof Linebreak) {
-                //     const previous = this.parent?.children.findLast(c => c.index < this.index && c.capabilities.has(MERGEABLE));
-                //         this.log('Merging with previous block:', previous);
-                //         previous?.merge?.(new MergeData(this.children.slice(0, -1), -1));
-                //         this.rm();
-                    
-                // } else if (child instanceof Text && child.selection?.start === 0) {
-                //     const previous = this.parent?.children.findLast(c => c.index < this.index && c.capabilities.has(MERGEABLE));
-                //         this.log('Merging with previous block:', previous, 'with children:', this.children);
-                //         previous?.merge?.(new MergeData(this.children.slice(0, -1), -1));
-                //         this.rm();
-                // }
-                
             } else if (e.key === 'Delete') {
                 this.log('Delete pressed in paragraph:', this.index);
                 e.preventDefault();
@@ -266,8 +251,20 @@ export class Paragraph extends MegaBlock {
                 if (child instanceof Linebreak && next) {
                     child.delete();
                     next.focus?.(new Focus(0, 0));
+                } else if ((child instanceof Linebreak && !next) || (child instanceof Text && child === this.children.at(-2) && next instanceof Linebreak)) {
+                    this.log('Try merging next block with this');
+                    const nextMergeable = this.parent?.children.find(c => c.index > this.index && c.capabilities.has(MERGEABLE));
+                    if (nextMergeable) {
+                        const offset = this.end;
+                        this.merge(new MergeData(nextMergeable.children.slice(0, -1), -1));
+                        nextMergeable.rm();
+                        this.focus(new Focus(offset -1, offset -1));
+                    }
                 } else if (child instanceof Text && next && child.selection?.end === child.text.length) {
+                    const offset = child.selection.start;
                     next.delete(0, 1);
+                    this.log('Deleting character from next text block:', next);
+                    child.focus?.(new Focus(offset, offset));
                 }
             }
         }
@@ -276,6 +273,7 @@ export class Paragraph extends MegaBlock {
     
     normalize = () => {
         if (!this.codex) return;
+
         /** @param {Number} blockIndex */
         const merge = (blockIndex) => {
             if (blockIndex >= this.children.length - 1) return;
@@ -290,12 +288,13 @@ export class Paragraph extends MegaBlock {
                 merge(blockIndex + 1);
             }
         }
+
         if (this.children.length === 0) {
             this.children = [new Linebreak(this.codex)];
         } else {
             merge(0);
         }
-        // Ensure the last child is a Linebreak
+
         if (!(this.children.at(-1) instanceof Linebreak)) {
             this.children.push(new Linebreak(this.codex));
         }
@@ -312,11 +311,12 @@ export class Paragraph extends MegaBlock {
         this.log('Splitting paragraph at offset:', offset);
 
         const splittingBlock = this.children.find(child => offset >= child.start && offset <= child.end);
-        this.log(JSON.stringify(this.children.map(c => ({...c.toJSON(), s: c.start, e: c.end })), null, 2));
-        
-        const afterBlocks = (splittingBlock && this.children.filter(child => child.index > splittingBlock.index)) || [];
-        
-        const startBlock = splittingBlock instanceof Text ? splittingBlock.split(offset - splittingBlock.start) : new Linebreak(this.codex);
+        if (!splittingBlock) return;
+
+        const afterBlocks = (splittingBlock && this.children.filter(child => child.index > splittingBlock.index && !child.last)) || [];
+        this.log(JSON.stringify(afterBlocks.map(c => ({...c.toJSON(), s: c.start, e: c.end })), null, 2));
+
+        const startBlock = splittingBlock instanceof Text ? splittingBlock.split(offset - splittingBlock.start) : null;
         
         this.children = this.children.filter(child => !(afterBlocks.includes(child)));
         
@@ -324,6 +324,7 @@ export class Paragraph extends MegaBlock {
         newParagraph.children = [
             ...(startBlock ? [startBlock] : []),
             ...afterBlocks,
+            new Linebreak(this.codex),
         ];
         
         const parentIndex = this.codex.children.indexOf(this);
@@ -364,7 +365,6 @@ export class Paragraph extends MegaBlock {
             if (at < 0 || at > this.children.at(-1)?.end) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
 
             const child = this.children.find(c => c.start <= at && c.end >= at);
-            // this.log(`Joining children at index ${at} in paragraph ${this.index}. Found child:`, child);
             if (!child) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
             this.log(`Joining children at index ${at} in paragraph ${this.index}. Found child:`, child);
             if (child instanceof Text) child.split(at - child.start);
@@ -383,11 +383,10 @@ export class Paragraph extends MegaBlock {
         /** @type {(Text | Linebreak)[]} */
         const blocks = data.blocks.filter(block => block instanceof Text || block instanceof Linebreak);
         this.log('Merging blocks:', blocks);
-        // if (blocks.length === 0) return;
         const offset = this.end;
         this.join(blocks, data.at - 1);
         this.log('After merge:', this.children);
-        // this.focus(new Focus(offset, offset));
+        this.focus(new Focus(offset - 1, offset - 1));
     }
 
     /**
@@ -445,7 +444,7 @@ export class Paragraph extends MegaBlock {
         
         let startBlock = this.children.find(child => start >= child.start && start <= child.end);
         let endBlock = this.children.find(child => end >= child.start && end <= child.end);
-        if (start === end && startBlock instanceof Linebreak && start === startBlock.end) startBlock = endBlock = this.children.find(child => child.start === start);
+        if (start === end && startBlock instanceof Linebreak && start === startBlock.end && this.children.find(child => child.start === start)) startBlock = endBlock = this.children.find(child => child.start === start);
 
         this.log(`Focus data for paragraph ${this.index}: start=${start}, end=${end}`, startBlock, endBlock);
 

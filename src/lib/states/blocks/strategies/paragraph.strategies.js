@@ -4,7 +4,6 @@ import { Linebreak } from "../linebreak.svelte";
 import { Text } from "../text.svelte";
 
 /**
-* 
 * @param {import('../paragraph.svelte').Paragraph} paragraph 
 * @param {import('../paragraph.svelte').ParagraphContent} [content] 
 */
@@ -17,6 +16,7 @@ const replace = (paragraph, content) => {
 
     const between = paragraph.children.slice(paragraph.children.indexOf(start) + 1, paragraph.children.indexOf(end));
 
+    console.log(start.start, (start instanceof Text ? start.selection?.start : 0));
     const data = {
         startOffset: start.start + (start instanceof Text ? start.selection?.start : 0),
         endOffset: end.start + (end instanceof Text ? end.selection?.end : 0),
