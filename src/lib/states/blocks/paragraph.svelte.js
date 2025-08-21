@@ -413,6 +413,7 @@ export class Paragraph extends MegaBlock {
     /** @param {Focus} f @param {Number} attempts */
     focus = (f, attempts = 0) => requestAnimationFrame(() => {
         this.log('Focusing paragraph:', this.index, 'with focus:', f);
+        console.trace();
         if (this.element) {
             const data = this.getFocusData(f);
             if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
@@ -442,8 +443,10 @@ export class Paragraph extends MegaBlock {
             end = 0;
         }
         
-        const startBlock = this.children.find(child => start >= child.start && start <= child.end);
-        const endBlock = this.children.find(child => end >= child.start && end <= child.end);
+        let startBlock = this.children.find(child => start >= child.start && start <= child.end);
+        let endBlock = this.children.find(child => end >= child.start && end <= child.end);
+        if (start === end && startBlock instanceof Linebreak && start === startBlock.end) startBlock = endBlock = this.children.find(child => child.start === start);
+
         this.log(`Focus data for paragraph ${this.index}: start=${start}, end=${end}`, startBlock, endBlock);
 
         const startData = startBlock ? startBlock.getFocusData(new Focus(start - startBlock.start, start - startBlock.start)) : null;

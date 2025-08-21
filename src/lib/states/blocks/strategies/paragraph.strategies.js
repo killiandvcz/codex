@@ -24,8 +24,6 @@ const replace = (paragraph, content) => {
         endSelection: end.selection?.end || 0
     }
 
-    
-
     between.forEach(b => b.rm());
 
     end instanceof Linebreak ? end.rm() : end.delete(0, data.endSelection || -1);
@@ -33,6 +31,8 @@ const replace = (paragraph, content) => {
 
     if (content) paragraph.generate(content, data.startOffset, 'global');
     if (content) paragraph.focus(new Focus(data.startOffset + 1, data.startOffset + 1));
+    else paragraph.focus(new Focus(data.startOffset , data.startOffset))
+    
 
     return data;
 }
@@ -106,13 +106,7 @@ export const paragraphRefocusStrategy = new Strategy(
  */
 export const paragraphBeforeInputStrategy = new Strategy(
     'paragraph-beforeinput-strategy',
-    (codex, context) => {
-        return true;
-        // if (context.event.inputType === 'insertText') {
-        //     return true;
-        // }
-        // return false;
-    },
+    (codex, context) => true,
     (codex, context) => {
         /** @type {ParagraphBeforeInputContext} */
         const { event, block } = context;

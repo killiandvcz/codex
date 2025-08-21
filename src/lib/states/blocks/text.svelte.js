@@ -140,12 +140,10 @@ export class Text extends Block {
     /** @param {KeyboardEvent} e @param {Function} ascend */
     onkeydown = (e, ascend) => {
         if (e.key === 'Backspace' || e.key === 'Delete') {
-            // this.log('Backspace/Delete pressed in text block:', this);
             e.preventDefault();
             const parent = this.parent;
             const start = this.start;
             const end = this.end;
-            // this.log(`Backspace/Delete pressed in text block at index ${this.index} with start ${start}`, this.codex?.selection.raw);
             if (this.selection && this.selection.length > 0) {
                 this.delete(this.selection.start, this.selection.end);
                 if (this.selection) this.focus(new Focus(this.selection.start, this.selection.start));
@@ -157,7 +155,7 @@ export class Text extends Block {
             } else if (this.selection) {
                 this.delete(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start : this.selection.start + 1);
                 if (this.selection) this.focus(new Focus(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start));
-                else parent?.focus(new Focus(end, end));
+                else parent?.focus(new Focus(start, start));
             }
         } else ascend()
     }
@@ -330,5 +328,10 @@ export class Text extends Block {
             strikethrough: this.strikethrough,
             code: this.code,
         };
+    }
+
+
+    toMarkdown() {
+
     }
 }
