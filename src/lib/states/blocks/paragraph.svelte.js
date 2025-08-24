@@ -50,9 +50,7 @@ export class Paragraph extends MegaBlock {
         });
 
 
-        this.method('delete', deletion => {
-            this.log('Deleting paragraph', deletion);
-        });
+        this.method('delete', deletion => this.handleDelete(deletion));
         
         
         $effect.root(() => {
@@ -83,60 +81,17 @@ export class Paragraph extends MegaBlock {
     element = $state(null);
     
     selection = $derived.by(() => {
-        // Récupère la sélection globale du codex
-        const globalSelection = this.codex?.selection;
-        if (!globalSelection?.range) {
-            return {
-                anchorOffset: null,
-                focusOffset: null,
-                isCollapsed: false,
-                isInParagraph: false
-            };
-        }
-        
-        const anchoredBlock = globalSelection.anchoredBlock;
-        const focusedBlock = globalSelection.focusedBlock;
-        
-        // Fonction helper pour calculer l'offset local d'un block dans ce paragraphe
-        const getLocalOffset = (block, globalOffset) => {
-            if (!this.children.includes(block)) {
-                return null; // Le block n'est pas dans ce paragraphe
-            }
-            
-            // Calcule l'offset des blocks avant celui-ci
-            const beforeBlocks = this.children.filter(child => child.index < block.index);
-            const beforeOffset = beforeBlocks.at(-1)?.end ?? 0;
-            
-            // L'offset local est l'offset dans le block + l'offset des blocks précédents
-            const localOffsetInBlock = block instanceof Text ? (beforeBlocks.at(-1) instanceof Linebreak ? globalOffset + 1 : globalOffset) : 1;
-            return beforeOffset + localOffsetInBlock;
-        };
-        
-        // Calcule les offsets locaux pour anchor et focus
-        const anchorOffset = getLocalOffset(anchoredBlock, globalSelection.anchorOffset || 0);
-        const focusOffset = getLocalOffset(focusedBlock, globalSelection.focusOffset || 0);
+        const firstChild = this.children.find(child => child.selected);
+        const lastChild = this.children.findLast(child => child.selected);
 
+        const firstOffset = firstChild && firstChild.start + (firstChild instanceof Text ? firstChild.selection?.start : 0);
+        const lastOffset = lastChild && lastChild.start + (lastChild instanceof Text ? lastChild.selection?.end : 1);
 
-
-        
-        
-        // Détermine si la sélection est dans ce paragraphe
-        const isAnchorInParagraph = anchorOffset !== null;
-        const isFocusInParagraph = focusOffset !== null;
-        const isInParagraph = isAnchorInParagraph || isFocusInParagraph;
-        
-        // Détermine si c'est collapsed
-        const isCollapsed = anchorOffset === focusOffset && isAnchorInParagraph && isFocusInParagraph;
-        
         return {
-            anchorOffset: isAnchorInParagraph ? anchorOffset : null,
-            focusOffset: isFocusInParagraph ? focusOffset : null,
-            isCollapsed,
-            isInParagraph,
-            // Infos supplémentaires qui peuvent être utiles
-            anchoredBlock: isAnchorInParagraph ? anchoredBlock : null,
-            focusedBlock: isFocusInParagraph ? focusedBlock : null,
-            isPartialSelection: isAnchorInParagraph !== isFocusInParagraph // Sélection qui commence ou finit dans ce paragraphe
+            anchorOffset: firstOffset,
+            focusOffset: lastOffset,
+            isCollapsed: firstOffset === lastOffset,
+            isInParagraph: !!firstChild
         };
     });
     
@@ -471,4 +426,16 @@ export class Paragraph extends MegaBlock {
 
 
     debug = $derived(`${this.selection.anchorOffset} - ${this.selection.focusOffset} [length: ${this.length}]`);
+
+
+
+    /** 
+     * Handles the deletion of the paragraph.
+     * @param {import('../../values/codex.values').Deletion} deletion */
+    handleDelete = deletion => {
+        this.log('Handling deletion:', deletion);
+        if (deletion.mode === 'auto') {
+            
+        }
+    }
 }

@@ -106,32 +106,28 @@ export class Text extends Block {
     ].join(''));
     
     selection = $derived.by(() => {
-        
-        if (this.selected) {
-            const selection = this.codex?.selection;
-            let startOffset = null;
-            let endOffset = null;
-            if (selection?.startBlock?.index < this.index) {
-                startOffset = 0;
-            } else if (selection?.startBlock?.index === this.index) {
-                startOffset = selection?.startOffset ?? 0;
+        const range = this.codex?.selection.range;
+        if (this.selected && range && this.element) {
+            const localrange = range.cloneRange();
+            const textnode = this.element.childNodes[0];
+            try {
+                if (range.comparePoint(textnode, 0) >= 0) {
+                    localrange.setStart(textnode, 0);
+                }
+                if (range.comparePoint(textnode, this.text.length) <= 0) {
+                    localrange.setEnd(textnode, this.text.length);
+                }
+            } catch (e) {
+                console.error(e);
             }
-            
-            if (selection?.endBlock?.index > this.index) {
-                endOffset = this.text.length;
-            } else if (selection?.endBlock?.index === this.index) {
-                endOffset = selection?.endOffset ?? this.text.length;
-            }
-            
-            if (startOffset !== null && endOffset !== null) {
-                return {
-                    start: startOffset,
-                    end: endOffset,
-                    length: endOffset - startOffset
-                };
-            } else {
-                return null;
-            }
+            const startOffset = localrange.startOffset;
+            const endOffset = localrange.endOffset;
+
+            return {
+                start: startOffset,
+                end: endOffset,
+                length: endOffset - startOffset
+            };
         }
     })
     

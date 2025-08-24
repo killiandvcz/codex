@@ -34,7 +34,16 @@ export class Linebreak extends Block {
     debug = $derived(`(${this.start} - ${this.end}) [${this.offset}]`);
 
     /** @type {Boolean} */
-    selected = $derived(super.selected || this.codex?.selection?.anchoredBlocks.includes(this) || false);
+    selected = $derived.by(() => {
+        if (super.selected) return true;
+        if (this.codex?.selection?.isCollapsed && this.codex?.selection?.range) {
+            const { startContainer, startOffset } = this.codex.selection.range;
+            const nodeAtCursor = startContainer.childNodes[startOffset];
+            const nodeBefore = startContainer.childNodes[startOffset - 1];
+            return (nodeAtCursor === this.element) || (nodeBefore === this.element);
+        }
+        return false;
+    });
     
     /** @param {KeyboardEvent} e @param {Function} ascend */
     onkeydown = (e, ascend) => ascend();

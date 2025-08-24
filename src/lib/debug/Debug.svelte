@@ -1,4 +1,5 @@
 <script>
+    import Selection from "./Selection.svelte";
     import Structure from "./Structure.svelte";
 
     /** @type {{codex: import('$lib/states/codex.svelte').Codex}}*/
@@ -9,5 +10,5 @@
 
 
 <Structure {codex} />
-
+<Selection {codex} />
 
