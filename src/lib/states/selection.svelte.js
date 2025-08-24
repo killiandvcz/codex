@@ -122,9 +122,8 @@ export class CodexSelection extends SvelteSelection {
         const start = this.startBlock?.path
         const end = this.endBlock?.path;
         const commonIndex = findClosestParentIndex(start?.join('.'), end?.join('.'));
-        const parent = this.codex.recursive.find(block => block.index === commonIndex);
+        const parent = commonIndex === -1 ? this.codex : this.codex.recursive.find(block => block.index === commonIndex);
         if (!parent) {
-            // console.warn(`No common parent found for selection between ${start?.join('.')} and ${end?.join('.')}`);
             return null;
         }
         return parent;

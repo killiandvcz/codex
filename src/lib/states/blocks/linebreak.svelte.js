@@ -31,7 +31,7 @@ export class Linebreak extends Block {
         return Array.from(this.element?.parentNode?.childNodes || []).indexOf(this.element) || 0;
     }
     
-    debug = $derived(`\\n (${this.start} - ${this.end}) [${this.offset}]`);
+    debug = $derived(`(${this.start} - ${this.end}) [${this.offset}]`);
 
     /** @type {Boolean} */
     selected = $derived(super.selected || this.codex?.selection?.anchoredBlocks.includes(this) || false);
@@ -62,7 +62,7 @@ export class Linebreak extends Block {
         
     }
 
-    delete = () => this.parent && (this.parent.children = this.parent?.children.filter(child => child !== this));
+    delete = () => this.rm();
 
     /** @param {Focus} [f] @param {Number} [attempts=0] */
     focus = (f, attempts = 0) => requestAnimationFrame(() => {

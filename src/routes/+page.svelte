@@ -2,6 +2,7 @@
     import './global.css';
     import { Codex } from '$lib/states/codex.svelte';
     import History from '$lib/debug/History.svelte';
+    import Debug from '$lib/debug/Debug.svelte';
     
     
     const codex = new Codex();
@@ -11,23 +12,6 @@
     const selection = $derived(codex.selection);
 </script>
 
-{#snippet section(block)}
-<div class="section">
-    <h4>{block.selected ? "👁️" : ""}({block.index}) {block.type} - {block.debug} {block.element ? "🔗" : ""}</h4>
-    {#if block.children}
-    <ul>
-        {#each block.children as child (child.id)}
-        <li>
-            {@render section(child)}
-        </li>
-        {/each}
-    </ul>
-    
-    {/if}
-</div>
-
-{/snippet}
-
 <div class="_">
     <div class="editor">
         {#if Editor}
@@ -35,85 +19,7 @@
         {/if}    
     </div>
     <div class="debug">
-        <h2>Debug Information</h2>
-        
-        <h3>Structure</h3>
-        {@render section(codex)}
-        
-        <h3>Selection</h3>
-        {#if selection.range}
-        <div class="selection-info">
-            <!-- Position DOM -->
-            <div class="section">
-                <h4>DOM Selection</h4>
-                <div class="row">
-                    <span class="label">Blocks in Selection</span>
-                    <span class="value">{selection.blocks.map(block => block.index).join(", ")}</span>
-                </div>
-                <div class="row">
-                    <span class="label">Endpoint in Selection</span>
-                    <span class="value">{selection.startBlock?.index || 'none'} - {selection.endBlock?.index || 'none'}</span>
-                </div>
-                <div class="row">
-                    <span class="label">Collapsed</span>
-                    <span class="value">{selection.collapsed}</span>
-                </div>
-                <div class="row">
-                    <span class="label">Multiblocks ?</span>
-                    <span class="value">{selection.isMultiBlock}</span>
-                </div>
-                <div class="row">
-                    <span class="label">Depth</span>
-                    <span class="value">{selection.depth}</span>
-                </div>
-                <div class="row">
-                    <span class="label">Length</span>
-                    <span class="value">{selection.length}</span>
-                </div>
-
-                <div class="row">
-                    <span class="label">Chain</span>
-                    <span class="value">{selection.parent?.path}</span>
-                </div>
-                <div class="row">
-                    <span class="label">Start Container</span>
-                    <span class="value">{selection.start?.nodeName || 'none'}</span>
-                </div>
-                <div class="row">
-                    <span class="label">Start Offset</span>
-                    <span class="value">{selection.startOffset || '0'}</span>
-                </div>
-
-                <div class="row">
-                    <span class="label">End Container</span>
-                    <span class="value">{selection.end?.nodeName || 'none'}</span>
-                </div>
-                <div class="row">
-                    <span class="label">End Offset</span>
-                    <span class="value">{selection.endOffset || '0'}</span>
-                </div>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h4>Anchored Blocks</h4>
-            {#if selection.anchoredBlocks && selection.anchoredBlocks.length > 0}
-            {#each selection.anchoredBlocks as block}
-            <div class="row">
-                <span class="label">{block.type}</span>
-                <span class="value">{block.index} - {block.id}</span>
-            </div>
-            {/each}
-            {:else}
-            <p class="no-selection">No anchored blocks</p>
-            {/if}
-        </div>
-        {:else}
-        <p class="no-selection">No selection</p>
-        {/if}
-
-
-        <!-- <History {codex} /> -->
+        <Debug {codex} />
     </div>
 </div>
 

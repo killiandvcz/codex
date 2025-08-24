@@ -48,6 +48,11 @@ export class Paragraph extends MegaBlock {
             strategies: paragraphStrategies,
             capabilities: [ MERGEABLE ]
         });
+
+
+        this.method('delete', deletion => {
+            this.log('Deleting paragraph', deletion);
+        });
         
         
         $effect.root(() => {
@@ -465,5 +470,5 @@ export class Paragraph extends MegaBlock {
     }
 
 
-    debug = $derived(`Paragraph ${this.index} - ${this.selection.anchorOffset} - ${this.selection.focusOffset} [length: ${this.length}]`);
+    debug = $derived(`${this.selection.anchorOffset} - ${this.selection.focusOffset} [length: ${this.length}]`);
 }

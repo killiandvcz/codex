@@ -89,7 +89,7 @@ export class Text extends Block {
     /** @type {Number} */
     end = $derived(this.start + (this.text.length || 0));
     
-    debug = $derived(`${this.text} (${this.start} - ${this.end}) [${this.selected ? 'selected' : ''}] ${this.selectionDebug}`);
+    debug = $derived(`${this.text} (${this.selection?.start}->${this.selection?.end})`);
     
     bold = $state(false);
     italic = $state(false);
@@ -240,9 +240,7 @@ export class Text extends Block {
         if (from < 0) from = this.text.length + (from + 1);
         if (to < 0) to = this.text.length + (to + 1);
         if (to > this.text.length) to = this.text.length;
-        if (from < 0 || to > this.text.length || from > to) {
-            throw new Error(`Invalid range from ${from} to ${to} for text "${this.text}".`);
-        }
+        if (from < 0 || to > this.text.length || from > to) throw new Error(`Invalid range from ${from} to ${to} for text "${this.text}".`);
         this.text = this.text.slice(0, from) + this.text.slice(to);
         if (!this.text.trim()) { return this.rm() };
         this.resync();
@@ -322,11 +320,11 @@ export class Text extends Block {
             type: 'text',
             text: this.text,
             ...(this.link ? { link: this.link } : {}),
-            bold: this.bold,
-            italic: this.italic,
-            underline: this.underline,
-            strikethrough: this.strikethrough,
-            code: this.code,
+            ...(this.bold ? { bold: this.bold } : {}),
+            ...(this.italic ? { italic: this.italic } : {}),
+            ...(this.underline ? { underline: this.underline } : {}),
+            ...(this.strikethrough ? { strikethrough: this.strikethrough } : {}),
+            ...(this.code ? { code: this.code } : {}),
         };
     }
 

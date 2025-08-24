@@ -1,3 +1,4 @@
+import { Deletion } from "$lib/values/codex.values";
 import { Strategy } from "../strategy.svelte";
 
 /**
@@ -15,8 +16,22 @@ export const multiBlockBackspaceStrategy = new Strategy(
     },
     /** @param {MultiBlockBackspaceContext} context */
     (codex, context) => {
-        // console.log('Executing multi-block backspace strategy');
-    },
-)
+        codex.log('Executing multi-block backspace strategy');
 
-multiBlockBackspaceStrategy.tag('backspace').tag('multi-block').tag('keydown')
+        const deletion = new Deletion({
+            mode: "auto",
+            direction: "backward",
+            source: 'keyboard',
+            data: {
+                event: context.event,
+                start: codex.selection.startBlock,
+                end: codex.selection.endBlock,
+            }
+        });
+
+        codex.children.filter(c => c.selected).forEach(c => c.call('delete', deletion));
+
+
+        
+    },
+).tag('backspace').tag('multi-block').tag('keydown')

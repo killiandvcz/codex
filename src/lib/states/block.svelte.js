@@ -28,6 +28,12 @@ import Codex from '$lib/components/Codex.svelte';
  */
 
 
+/**
+ * @callback BlockMethod
+ * @param {...any} args - Additional arguments for the method.
+ */
+
+
 export class Block {
     /** @param {import('./codex.svelte').Codex?} codex @param {BlockManifest} manifest @param {string?} id */
     constructor(codex, manifest, id = null) {
@@ -42,6 +48,16 @@ export class Block {
                 this.capabilities.add(capability);
             }
         }
+
+        /**
+         * A set of methods available on the block.
+         * @type {Map<string, Function>}
+         */
+        this.methods = new Map();
+
+        this.method('delete', () => this.rm());
+
+
     }
 
     /** @type {import('svelte').Component?} */
@@ -98,7 +114,16 @@ export class Block {
         }
         return false;
     }
-    
+
+
+    /**
+     * Deletes the block.
+     * @param {import('../values/codex.values').Deletion} [deletion]
+     * @returns {Boolean}
+     */
+    delete = (deletion) => this.rm();
+
+
     /** @type {Object<string, any>} */
     metadata = $state({});
     
@@ -114,18 +139,33 @@ export class Block {
         if (typeof handler !== 'function') throw new Error(`Handler "${handlerName}" is not a function in block "${this.type}".`);
         return handler(...params);
     }
-    
-    
+
+    /**
+     * Adds a method to the block.
+     * @param {String} name
+     * @param {BlockMethod} callback
+     */
+    method = (name, callback) => this.methods.set(name, callback);
+
+    /**
+     * Calls a method on the block.
+     * @param {String} name
+     * @param {...any} args
+     * @returns {any}
+     */
+    call = (name, ...args) => {
+        const method = this.methods.get(name);
+        if (!method) throw new Error(`Method "${name}" not found in block "${this.type}".`);
+        return method(...args);
+    }
 
     /**
      * Logs a message to the console if debugging is enabled.
      * @param  {...any} args 
      */
     log = (...args) => {
-        if (this.codex?.debug) {
-            const prefix = `${this.type}-${this.index}`.toUpperCase();
-            console.log(prefix, ...args);
-        }
+        const prefix = `${this.type}${this.index < 0 ? '-⌀' : `-${this.index}`}`.toUpperCase();
+        console.log(prefix, ...args);
     }
 
     toJSON() {

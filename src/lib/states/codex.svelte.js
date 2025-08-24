@@ -108,6 +108,7 @@ export class Codex extends MegaBlock {
     onbeforeinput = e => {
         let currentParent = this.selection?.parent;
         if (currentParent && currentParent instanceof MegaBlock) {
+            if (currentParent === this) e.preventDefault();
             while (currentParent) {
                 const strategy = currentParent.strategies?.filter(s => s.tags.includes('beforeinput')).find(s => s.canHandle(this, {event: e}));
                 if (strategy) {
@@ -125,6 +126,7 @@ export class Codex extends MegaBlock {
         }
     }
     
+
     /** @param {InputEvent} e */
     oninput = e => {
         if (this.selection?.anchoredBlocks) {
@@ -140,8 +142,8 @@ export class Codex extends MegaBlock {
     /** @param {KeyboardEvent} e */
     onkeydown = e => {
         const context = {event: e};
-        
         let currentParent = this.selection?.parent;
+
         if (currentParent && currentParent instanceof MegaBlock) {
             while (currentParent) {
                 const strategy = currentParent.strategies?.filter(s => s.tags.includes('keydown')).find(s => s.canHandle(this, context));
