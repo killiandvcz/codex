@@ -16,6 +16,7 @@ import LinebreakComponent from '$lib/components/Linebreak.svelte';
 import { TextSystem } from './systems/textSystem.svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { multiBlockBackspaceStrategy } from './strategies/multiBlockBackspace.svelte';
+import { Transaction } from '$lib/utils/operations.utils';
 
 export const initialComponents = {
     codex: CodexComponent,
@@ -63,7 +64,7 @@ export class Codex extends MegaBlock {
         
         this.selection = new CodexSelection(this);
 
-        /** @type {SvelteSet<import('./operations.svelte').Operation>} */
+        /** @type {SvelteSet<import('$lib/utils/operations.utils').Transaction>} */
         this.history = new SvelteSet();
         
         this.systems = new SvelteMap();
@@ -170,5 +171,8 @@ export class Codex extends MegaBlock {
     }
     
     
-    
+
+    /** @param {import('$lib/utils/operations.utils').Operation[]} ops */
+    tx = ops => new Transaction(ops, this);
+
 }

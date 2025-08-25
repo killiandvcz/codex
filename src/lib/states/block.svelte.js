@@ -62,6 +62,8 @@ export class Block {
 
     /** @type {import('svelte').Component?} */
     component = $derived(this.codex?.components[this.type] || null);
+
+    unlink = $derived(this.codex?.recursive.includes(this) === false);
     
     /** @type {Number} */
     index = $derived(this.codex?.recursive.indexOf(this) ?? -1);
@@ -116,14 +118,6 @@ export class Block {
     }
 
 
-    /**
-     * Deletes the block.
-     * @param {import('../values/codex.values').Deletion} [deletion]
-     * @returns {Boolean}
-     */
-    delete = (deletion) => this.rm();
-
-
     /** @type {Object<string, any>} */
     metadata = $state({});
     
@@ -154,6 +148,7 @@ export class Block {
      * @returns {any}
      */
     call = (name, ...args) => {
+        this.log(`Calling method "${name}" with args:`, args);
         const method = this.methods.get(name);
         if (!method) throw new Error(`Method "${name}" not found in block "${this.type}".`);
         return method(...args);

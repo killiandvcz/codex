@@ -1,7 +1,8 @@
 import { untrack } from 'svelte';
 import { Block } from '../block.svelte';
-import { TextInputOperation } from './operations/text.ops';
+import { TextDeleteOperation, TextInsertOperation } from './operations/text.ops';
 import { Focus } from '$lib/values/focus.values';
+import { Transaction } from '$lib/utils/operations.utils';
 
 /** 
 * @typedef {Object} TextInit
@@ -74,6 +75,9 @@ export class Text extends Block {
                 })
             })
         });
+
+        this.method('insert', this.handleInsert);
+        this.method('delete', this.handleDelete);
     }
     
     /** @type {import('../systems/textSystem.svelte').TextSystem?} */
@@ -135,25 +139,37 @@ export class Text extends Block {
     
     /** @param {KeyboardEvent} e @param {Function} ascend */
     onkeydown = (e, ascend) => {
-        if (e.key === 'Backspace' || e.key === 'Delete') {
-            e.preventDefault();
-            const parent = this.parent;
-            const start = this.start;
-            const end = this.end;
-            if (this.selection && this.selection.length > 0) {
-                this.delete(this.selection.start, this.selection.end);
-                if (this.selection) this.focus(new Focus(this.selection.start, this.selection.start));
-                else parent?.focus(new Focus(start, start));
-            } else if (this.selection && this.selection.start === 0 && e.key === "Backspace") {
-                ascend();
-            } else if (this.selection && this.selection.end === this.text.length && e.key === "Delete") {
-                ascend();
-            } else if (this.selection) {
-                this.delete(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start : this.selection.start + 1);
-                if (this.selection) this.focus(new Focus(e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start, e.key === 'Backspace' ? this.selection.start - 1 : this.selection.start));
-                else parent?.focus(new Focus(start, start));
-            }
-        } else ascend()
+        if (e.key !== 'Backspace' && e.key !== 'Delete') return ascend();
+
+        e.preventDefault();
+        
+        if (!this.selection) return;
+
+        const isBackspace = e.key === 'Backspace';
+        const { start, end } = this.selection;
+
+        if (this.selection.length > 0) {
+            this.executeDelete(start, end, start);
+            return;
+        }
+
+        if ((isBackspace && start === 0) || (!isBackspace && end === this.text.length)) {
+            return ascend();
+        }
+
+        const from = isBackspace ? start - 1 : start;
+        const to = isBackspace ? start : start + 1;
+        this.executeDelete(from, to, from);
+    }
+
+    executeDelete = (from, to, focusPosition) => {
+        const tx = this.codex?.tx([
+            new TextDeleteOperation(this, { from, to })
+        ]);
+        tx?.execute();
+        
+        const focusTarget = this.selection ? this : this.parent;
+        focusTarget?.focus(new Focus(focusPosition, focusPosition));
     }
     
     /** @param {InputEvent} e */
@@ -169,8 +185,19 @@ export class Text extends Block {
     /** @param {InputEvent} e */
     onbeforeinput = e => {
         if (e.inputType === 'insertText' && e.data) {
-            const operation = new TextInputOperation(this, e.data, this.selection?.start || 0);
-            this.codex?.history?.add(operation);
+            const deletion = this.selection && this.selection.length > 0;
+            const {start, end} = this.selection || {};
+            const tx = new Transaction([
+                ...(deletion ? [new TextDeleteOperation(this, {
+                    from: start,
+                    to: end
+                })] : []),
+                new TextInsertOperation(this, {
+                    text: e.data,
+                    offset: this.selection ? this.selection.start : this.text.length
+                })
+            ]); 
+            this.codex?.history?.add(tx);
         }
         // e.preventDefault();
     }
@@ -241,7 +268,7 @@ export class Text extends Block {
         if (!this.text.trim()) { return this.rm() };
         this.resync();
         this.refresh();
-        return false; // Block was deleted
+        return false;
     }
     
     
@@ -324,8 +351,23 @@ export class Text extends Block {
         };
     }
 
-
     toMarkdown() {
 
+    }
+
+    /**
+     * @param {import('./operations/text.ops').TextDeleteOperationData} data 
+     */
+    handleDelete = (data) => {
+        const { from, to } = data;
+        this.delete(from, to);
+    }
+
+    /**
+     * @param {import('./operations/text.ops').TextInsertOperation} data 
+     */
+    handleInsert = (data) => {
+        const { text, offset } = data;
+        this.insert(text, offset);
     }
 }

@@ -18,14 +18,12 @@
         <Editor {codex} />
         {/if}    
     </div>
-    <div class="debug">
-        <Debug {codex} />
-    </div>
+    <Debug {codex} />
 </div>
 
 <style lang="scss">
     ._ {
-        padding: 25px;
+        // padding: 25px;
         width: 100%;
         height: 100vh;
         display: flex;
@@ -39,18 +37,9 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            padding: 25px;
         }
         
-        .debug {
-            flex: 1;
-            height: 100%;
-            overflow: auto;
-            background-color: #f0f0f0;
-            padding: 20px;
-            border-left: 1px solid #ccc;
-            display: flex;
-            flex-direction: column;
-            gap: 25px;
-        }
+
     }
 </style>

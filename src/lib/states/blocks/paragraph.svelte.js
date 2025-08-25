@@ -427,15 +427,20 @@ export class Paragraph extends MegaBlock {
 
     debug = $derived(`${this.selection.anchorOffset} - ${this.selection.focusOffset} [length: ${this.length}]`);
 
-
-
-    /** 
+    /**
      * Handles the deletion of the paragraph.
-     * @param {import('../../values/codex.values').Deletion} deletion */
+     * @param {import('../../values/codex.values').Deletion} deletion 
+    */
     handleDelete = deletion => {
         this.log('Handling deletion:', deletion);
         if (deletion.mode === 'auto') {
-            
+            this.children.filter(c => c.selected).forEach(child => {
+                if (child instanceof Text) {
+                    // child.d
+                } else if (child instanceof Linebreak) {
+                    child.rm();
+                }
+            })
         }
     }
 }
