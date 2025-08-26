@@ -8,7 +8,7 @@ export class Operation {
     }
 
     execute() {
-        this.block.call(this.name, this.data);
+        return this.block.call(this.name, this.data);
     }
 
 
@@ -40,16 +40,20 @@ export class Transaction {
 
     execute() {
         const executedOps = [];
+        const results = [];
         
         try {
             for (const op of this.operations) {
-                op.execute();
+                const result = op.execute();
+                results.push({ operation: op, result });
                 executedOps.push(op);
             }
             
             if (this.codex) {
                 this.codex.history.add(this);
             }
+            
+            return results;
         } catch (error) {
             for (let i = executedOps.length - 1; i >= 0; i--) {
                 const op = executedOps[i];

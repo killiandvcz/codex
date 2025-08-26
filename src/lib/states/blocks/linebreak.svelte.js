@@ -10,11 +10,15 @@ import { Text } from "./text.svelte";
 
 
 export class Linebreak extends Block {
-    /** @param {import('../codex.svelte').Codex} codex */
-    constructor(codex) {
-        super(codex, {
-            type: 'linebreak'
-        });
+
+    /** @type {import("../block.svelte").BlockManifest} */    
+    static manifest = {
+        type: 'linebreak'
+    }
+
+    /** @param {import('../codex.svelte').Codex} codex @param {import("../block.svelte").BlockInit} [init] */
+    constructor(codex, init) {
+        super(codex, init);
     }
     
     /** @type {HTMLBRElement?} */
@@ -47,24 +51,27 @@ export class Linebreak extends Block {
     
     /** @param {KeyboardEvent} e @param {Function} ascend */
     onkeydown = (e, ascend) => ascend();
-    
-    /** @param {InputEvent} e */
-    onbeforeinput = e => {
+
+    /** @param {InputEvent} e @param {Function} ascend */
+    onbeforeinput = (e, ascend) => {
         e.preventDefault();
-        if (this.parent && this.parent instanceof MegaBlock) {
-            if (this.parent.blocks.find(block => block === Text) && this.codex) {
-                if (e.inputType === 'insertText' && e.data) {
-                    const newText = new Text(this.codex, { text: e.data || '', bold: false, italic: false, underline: false, strikethrough: false, code: false });
-                    const index = this.parent.children.indexOf(this);
-                    if (index !== -1) {
-                        this.parent.children.splice(index, 0, newText);
-                    } else {
-                        this.parent.children.push(newText);
-                    }
-                    newText.focus(new Focus(e.data.length, e.data.length));
-                }   
-            } 
-        }
+        ascend();
+        // if (this.parent && this.parent instanceof MegaBlock) {
+        //     if (this.parent.blocks.find(block => block === Text) && this.codex) {
+        //         if (e.inputType === 'insertText' && e.data) {
+        //             // ascend();
+        //             // this.log('Inserting text at linebreak:', e.data);
+        //             // const newText = new Text(this.codex, { text: e.data || '', bold: false, italic: false, underline: false, strikethrough: false, code: false });
+        //             // const index = this.parent.children.indexOf(this);
+        //             // if (index !== -1) {
+        //             //     this.parent.children.splice(index, 0, newText);
+        //             // } else {
+        //             //     this.parent.children.push(newText);
+        //             // }
+        //             // newText.focus(new Focus(e.data.length, e.data.length));
+        //         }
+        //     } 
+        // }
     }
 
     onfocus = () => {

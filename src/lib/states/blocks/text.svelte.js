@@ -4,64 +4,47 @@ import { TextDeleteOperation, TextInsertOperation } from './operations/text.ops'
 import { Focus } from '$lib/values/focus.values';
 import { Transaction } from '$lib/utils/operations.utils';
 
-/** 
-* @typedef {Object} TextInit
-* @property {String} [text] - Initial text content for the block.
-* @property {Object} [link] - Link metadata for the text block.
-* @property {String} [link.url] - The URL of the link.
-* @property {String} [link.target] - The target attribute for the link (e.g., '_blank').
-* @property {String} [link.title] - The title attribute for the link.
-* @property {String} [link.rel] - The rel attribute for the link.
-* @property {Boolean} [bold] - Whether the text should be bold.
-* @property {Boolean} [italic] - Whether the text should be italic.
-* @property {Boolean} [underline] - Whether the text should be underlined.
-* @property {Boolean} [strikethrough] - Whether the text should have a strikethrough.
-* @property {Boolean} [code] - Whether the text should be formatted as code.
-*/
+/**
+ * @typedef {import('../block.svelte').BlockInit & {
+ *   text?: String,
+ *   bold?: Boolean,
+ *   italic?: Boolean,
+ *   underline?: Boolean,
+ *   strikethrough?: Boolean,
+ *   code?: Boolean
+ * }} TextInit
+ */
 
 /**
  * @typedef {import('../block.svelte').BlockObject & TextInit & {type: 'text'}} TextObject
  */
 
+
+/**
+ * @extends {Block}
+ */
 export class Text extends Block {
+    /** @type {import('../block.svelte').BlockManifest} */
+    static manifest = {
+        type: 'text',
+    }
+    
     /** 
     * @param {import('../codex.svelte').Codex} codex
     * @param {TextInit} init */
     constructor(codex, init = {}) {
         super(codex, {
-            type: 'text',
-            operations: {
-                truncate: {
-                    type: 'truncate',
-                    params: ['offset'],
-                    handler: 'truncate'
-                },
-                split: {
-                    type: 'split',
-                    params: ['offset'],
-                    handler: 'split'
-                },
-                insert: {
-                    type: 'insert',
-                    params: ['text', 'offset'],
-                    handler: 'insert'
-                },
-                delete: {
-                    type: 'delete',
-                    params: ['from', 'to'],
-                    handler: 'delete'
-                }
-            }
+            id: init.id,
+            metadata: init.metadata || {}
         });
-        
+
         this.text = init.text || '';
         this.bold = init.bold || false;
         this.italic = init.italic || false;
         this.underline = init.underline || false;
         this.strikethrough = init.strikethrough || false;
         this.code = init.code || false;
-        
-        this.link = init.link || null;
+
         
         $effect.root(() => {
             $effect(() => {
@@ -342,7 +325,6 @@ export class Text extends Block {
             ...super.toJSON(),
             type: 'text',
             text: this.text,
-            ...(this.link ? { link: this.link } : {}),
             ...(this.bold ? { bold: this.bold } : {}),
             ...(this.italic ? { italic: this.italic } : {}),
             ...(this.underline ? { underline: this.underline } : {}),

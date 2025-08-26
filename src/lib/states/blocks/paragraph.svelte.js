@@ -4,6 +4,7 @@ import { Text } from "./text.svelte";
 import { paragraphStrategies } from "./strategies/paragraph.strategies";
 import { MERGEABLE, MergeData } from "../capabilities/merge.capability";
 import { Focus } from "$lib/values/focus.values";
+import { ParagraphBlockInsertion } from "./operations/paragraph.ops";
 
 /** 
 * @typedef {(import('./text.svelte').TextObject|import('./linebreak.svelte').LinebreakObject)[]} ParagraphContent
@@ -18,50 +19,57 @@ import { Focus } from "$lib/values/focus.values";
 
 
 /**
+ * @typedef {import("../block.svelte").BlockInit & {
+ *  children?: ParagraphContent
+ * }}
+ */
+
+
+/**
  * @extends {MegaBlock<Text|Linebreak>}
  */
 export class Paragraph extends MegaBlock {
+    /** @type {import("../block.svelte").MegaBlockManifest} */
+    static manifest = {
+        type: 'paragraph',
+        blocks: {
+            linebreak: Linebreak,
+            text: Text,
+        },
+        strategies: paragraphStrategies,
+        capabilities: [ MERGEABLE ]
+    }
+
     /**
     * @param {import('../codex.svelte').Codex} codex
     */
     constructor(codex) {
-        super(codex, {
-            type: 'paragraph',
-            blocks: [ Text, Linebreak ],
-            operations: {
-                truncate: {
-                    type: 'truncate',
-                    params: ['offset'],
-                    handler: 'truncate'
-                },
-                insert: {
-                    type: 'insert',
-                    params: ['text', 'offset'],
-                    handler: 'insert'
-                },
-                delete: {
-                    type: 'delete',
-                    params: ['from', 'to'],
-                    handler: 'delete'
-                },
-            },
-            strategies: paragraphStrategies,
-            capabilities: [ MERGEABLE ]
-        });
-
+        super(codex);
 
         this.method('delete', deletion => this.handleDelete(deletion));
-        
-        
+        this.method('insert', insertion => this.handleInsertBlocks(insertion));
+
         $effect.root(() => {
             $effect(() => {
                 if (this.codex && this.element) {
                     const lastChild = this.children[this.children.length - 1];
                     if (!lastChild ) {
-                        
-                        this.children = [...this.children, 
-                            new Linebreak(this.codex)
-                        ];
+                        // this.children = [...this.children, 
+                        //     new Linebreak(this.codex)
+                        // ];
+
+                        const tx = this.codex?.tx([
+                            new ParagraphBlockInsertion(this, {
+                                blocks: [
+                                    {
+                                        type: 'linebreak',
+                                        init: {}
+                                    }
+                                ],
+                                offset: -1
+                            })
+                        ]);
+                        tx?.execute();
                     }
                 }
             })
@@ -73,8 +81,6 @@ export class Paragraph extends MegaBlock {
                 }
             })
         });
-
-        
     }
     
     /** @type {HTMLParagraphElement?} */
@@ -87,10 +93,12 @@ export class Paragraph extends MegaBlock {
         const firstOffset = firstChild && firstChild.start + (firstChild instanceof Text ? firstChild.selection?.start : 0);
         const lastOffset = lastChild && lastChild.start + (lastChild instanceof Text ? lastChild.selection?.end : 1);
 
+        console.log(firstOffset, lastOffset)
+
         return {
             anchorOffset: firstOffset,
             focusOffset: lastOffset,
-            isCollapsed: firstOffset === lastOffset,
+            isCollapsed: this.codex?.selection.collapsed,
             isInParagraph: !!firstChild
         };
     });
@@ -111,6 +119,34 @@ export class Paragraph extends MegaBlock {
     /** @param {InputEvent} e */
     oninput = e => {
         
+    }
+
+
+    /**
+     * @param {InputEvent} e
+     */
+    onbeforeinput = e => {
+        if (e.inputType === 'insertText' && e.data) {
+            if (this.selection.isCollapsed && this.children.find(child => child.selected) instanceof Linebreak) {
+                const tx = this.codex?.tx([
+                    new ParagraphBlockInsertion(this, {
+                        blocks: [
+                            {
+                                type: 'text',
+                                init: {
+                                    text: e.data
+                                },
+                            }
+                        ],
+                        offset: this.selection.anchorOffset || 0
+                    })
+                ]);
+                const blocks = tx?.execute()?.[0]?.result;
+                if (blocks) {
+                    blocks.at(-1)?.focus?.(new Focus(-1, -1));
+                }
+            }
+        }
     }
     
     /** @param {KeyboardEvent} e */
@@ -268,13 +304,11 @@ export class Paragraph extends MegaBlock {
     /** @param {Number} offset */
     split = offset => {
         if (!this.codex) return;
-        this.log('Splitting paragraph at offset:', offset);
 
         const splittingBlock = this.children.find(child => offset >= child.start && offset <= child.end);
         if (!splittingBlock) return;
 
         const afterBlocks = (splittingBlock && this.children.filter(child => child.index > splittingBlock.index && !child.last)) || [];
-        this.log(JSON.stringify(afterBlocks.map(c => ({...c.toJSON(), s: c.start, e: c.end })), null, 2));
 
         const startBlock = splittingBlock instanceof Text ? splittingBlock.split(offset - splittingBlock.start) : null;
         
@@ -324,13 +358,22 @@ export class Paragraph extends MegaBlock {
             if (at < 0) at = this.children.at(-1)?.end + at + 1;
             if (at < 0 || at > this.children.at(-1)?.end) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
 
+            if (!this.children.length && this.codex) {
+                this.children.push(new Linebreak(this.codex));
+                return;
+            }
+
             const child = this.children.find(c => c.start <= at && c.end >= at);
             if (!child) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
             this.log(`Joining children at index ${at} in paragraph ${this.index}. Found child:`, child);
             if (child instanceof Text) child.split(at - child.start);
             const childIndex = this.children.indexOf(child);
             if (childIndex === -1) throw new Error(`Invalid child index ${childIndex} for joining children in paragraph ${this.index}.`);
-            this.children = [
+
+            this.children = at === 0 ? [
+                ...children,
+                ...this.children
+            ] : [
                 ...this.children.slice(0, childIndex + 1),
                 ...children,
                 ...this.children.slice(childIndex + 1),
@@ -442,5 +485,24 @@ export class Paragraph extends MegaBlock {
                 }
             })
         }
+    }
+
+
+
+    /**
+     * Handles the insertion of a new block.
+     * @param {import('./operations/paragraph.ops').ParagraphBlockInsertionData} data
+     */
+    handleInsertBlocks = data => {
+        const blocks = data.blocks.map(({ type, init }) => {
+            const B = this.blocks[type];
+            if (B && this.codex) {
+                const block = new B(this.codex, init);
+                return block;
+            }
+        }).filter(b => !!b);
+        this.join(blocks, data.offset, 'global');
+
+        return blocks;
     }
 }

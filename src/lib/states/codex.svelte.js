@@ -105,49 +105,21 @@ export class Codex extends MegaBlock {
     // }
     
     
-    /** @param {InputEvent} e */
-    onbeforeinput = e => {
-        let currentParent = this.selection?.parent;
-        if (currentParent && currentParent instanceof MegaBlock) {
-            if (currentParent === this) e.preventDefault();
-            while (currentParent) {
-                const strategy = currentParent.strategies?.filter(s => s.tags.includes('beforeinput')).find(s => s.canHandle(this, {event: e}));
-                if (strategy) {
-                    e.preventDefault();
-                    strategy.execute(this, {event: e, block: currentParent});
-                    return;
-                }
-                currentParent = currentParent.parent || (currentParent === this ? null : this);
-            }
-        } else if (currentParent) {
-            this.selection?.anchoredBlocks.forEach(block => block['onbeforeinput']?.(e));
-        } else {
-            // console.warn('No current parent block found for beforeinput event');
-            e.preventDefault();
-        }
-    }
-    
-
-    /** @param {InputEvent} e */
-    oninput = e => {
-        if (this.selection?.anchoredBlocks) {
-            this.selection.anchoredBlocks.forEach(block => {
-                const handler = block['oninput'];
-                if (handler && typeof handler === 'function') {
-                    handler(e);
-                }
-            });
-        }
-    }
-    
-    /** @param {KeyboardEvent} e */
-    onkeydown = e => {
+    /**
+     * Generic event handler with ascension logic
+     * @param {Event} e - The event object
+     * @param {string} eventType - The event type (e.g., 'keydown', 'input', 'beforeinput')
+     * @param {string} strategyTag - The strategy tag to look for
+     */
+    handleEvent = (e, eventType, strategyTag) => {
         const context = {event: e};
         let currentParent = this.selection?.parent;
 
         if (currentParent && currentParent instanceof MegaBlock) {
+            if (eventType === 'beforeinput' && currentParent === this) e.preventDefault();
+            
             while (currentParent) {
-                const strategy = currentParent.strategies?.filter(s => s.tags.includes('keydown')).find(s => s.canHandle(this, context));
+                const strategy = currentParent.strategies?.filter(s => s.tags.includes(strategyTag)).find(s => s.canHandle(this, context));
                 if (strategy) {
                     e.preventDefault();
                     strategy.execute(this, {...context, block: currentParent});
@@ -156,19 +128,31 @@ export class Codex extends MegaBlock {
                 currentParent = currentParent.parent || (currentParent === this ? null : this);
             }
         } else if (currentParent) {
-            const handlers = this.selection?.anchoredBlocks.map(block => block['onkeydown']).filter(handler => typeof handler === 'function');
+            const handlers = this.selection?.anchoredBlocks.map(block => block[eventType]).filter(handler => typeof handler === 'function');
+            if (handlers.length === 0) return;
+            
             let handler = handlers.at(-1);
             const ascend = () => {
                 const hIndex = handlers.indexOf(handler);
-                if (hIndex > 0) handler = handlers[hIndex - 1];
-                handler(e, ascend);
+                if (hIndex > 0) {
+                    handler = handlers[hIndex - 1];
+                    handler(e, ascend);
+                }
             };
             handler(e, ascend);
-        } else {
-            // console.log('No current parent block found for keydown event');
-            // e.preventDefault();
+        } else if (eventType === 'beforeinput') {
+            e.preventDefault();
         }
     }
+
+    /** @param {InputEvent} e */
+    onbeforeinput = e => this.handleEvent(e, 'onbeforeinput', 'beforeinput');
+
+    /** @param {InputEvent} e */
+    oninput = e => this.handleEvent(e, 'oninput', 'input');
+    
+    /** @param {KeyboardEvent} e */
+    onkeydown = e => this.handleEvent(e, 'onkeydown', 'keydown');
     
     
 

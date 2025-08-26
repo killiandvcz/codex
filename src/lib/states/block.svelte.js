@@ -5,49 +5,55 @@
 * @property {string} handler - The name of the handler function to execute for this operation.
 */
 
-import Codex from '$lib/components/Codex.svelte';
+/**
+ * @typedef {new (...args: any[]) => Block} BlockConstructor
+ */
 
 /**
 * @typedef {Object} BlockManifest
 * @property {string} type - The type of block (e.g., "paragraph", "text", "linebreak").
 * @property {Object<string, BlockOperation>} [operations] - A map of operation types to their handlers.
-* @property {import('./capability.svelte').Capability[]} capabilities - The capabilities of the block.
+* @property {import('./capability.svelte').Capability[]} [capabilities] - The capabilities of the block.
 */
 
 /**
 * @typedef {BlockManifest & {
-*   blocks: typeof Block[];
+*   blocks: Object<string, BlockConstructor>;
 *   strategies?: import('./strategy.svelte').Strategy[];
 * }} MegaBlockManifest
 */
 
 /**
  * @typedef {Object} BlockObject
- * @property {string} [id] - The unique identifier for the block.
+ * @property {string} id - The unique identifier for the block.
  * @property {string} type - The type of the block (e.g., "paragraph", "text").
  */
-
 
 /**
  * @callback BlockMethod
  * @param {...any} args - Additional arguments for the method.
  */
 
+/**
+ * @typedef {Object} BlockInit
+ * @property {string} [id] - The unique identifier for the block.
+ * @property {Object} [metadata] - Metadata associated with the block.
+ */
+
 
 export class Block {
-    /** @param {import('./codex.svelte').Codex?} codex @param {BlockManifest} manifest @param {string?} id */
-    constructor(codex, manifest, id = null) {
-        this.codex = codex;
-        this.id = $state(id || crypto.randomUUID());
-        this.manifest = $state(manifest);
-        this.type = $derived(this.manifest?.type || "block");
+    /** @type {BlockManifest} */
+    static manifest = {
+        type: 'block',
+        operations: {},
+        capabilities: []
+    }
 
-        this.capabilities = new Set();
-        if (manifest.capabilities) {
-            for (const capability of manifest.capabilities) {
-                this.capabilities.add(capability);
-            }
-        }
+    /** @param {import('./codex.svelte').Codex?} codex @param {BlockInit} init */
+    constructor(codex, init = {}) {
+        this.codex = codex;
+        this.id = init.id || crypto.randomUUID();
+        this.metadata = init.metadata || {};
 
         /**
          * A set of methods available on the block.
@@ -56,8 +62,14 @@ export class Block {
         this.methods = new Map();
 
         this.method('delete', () => this.rm());
+    }
 
+    get type() {
+        return this.manifest.type;
+    }
 
+    get capabilities() {
+        return new Set(this.manifest.capabilities);
     }
 
     /** @type {import('svelte').Component?} */
@@ -103,7 +115,7 @@ export class Block {
         else return [];
     });
 
-    /** @param {Capability} capability */
+    /** @param {import('./capability.svelte').Capability} capability */
     can = capability => this.capabilities.has(capability)
 
     /**
@@ -169,23 +181,43 @@ export class Block {
             type: this.type
         };
     }
+
+    /** @type {BlockManifest} */
+    get manifest() {
+        return this.constructor.manifest;
+    }
 }
 
 /**
  * @template {Block} [T=Block]
  */
 export class MegaBlock extends Block {
-    /** @param {import('./codex.svelte').Codex?} codex @param {MegaBlockManifest} manifest */
-    constructor(codex, manifest) {
-        super(codex, manifest);
-        
-        /** @type {typeof Block[]} */
-        this.blocks = manifest.blocks;
-        
-        /** @type {import('./strategy.svelte').Strategy[]} */
-        this.strategies = manifest.strategies || [];
+    /** @type {MegaBlockManifest} */
+    static manifest = {
+        type: 'mega-block',
+        operations: {},
+        capabilities: [],
+        blocks: {}
+    };
+
+    /** @param {import('./codex.svelte').Codex?} codex*/
+    constructor(codex) {
+        super(codex);
     }
-    
+
+    /** @type {MegaBlockManifest} */
+    get manifest() {
+        return this.constructor.manifest;
+    }
+
+    get blocks() {
+        return this.manifest.blocks;
+    }
+
+    get strategies() {
+        return this.manifest.strategies;
+    }
+
     /** @type {T[]} */
     children = $state([]);
     
@@ -199,9 +231,6 @@ export class MegaBlock extends Block {
     
     /** @param {Block} block */
     contains = block => this.recursive.includes(block);
-    
-    /** @param {import('./strategy.svelte').Strategy} strategy */
-    addStrategy = strategy => this.strategies.push(strategy);
 
     toJSON() {
         return {
