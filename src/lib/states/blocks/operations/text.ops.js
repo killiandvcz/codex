@@ -57,3 +57,29 @@ export class TextDeleteOperation extends Operation {
         return `Delete from ${this.from} to ${this.to}`;
     }
 }
+
+
+
+/**
+ * @typedef {Object} TextEditionData
+ * @property {string} [text] - The edited text.
+ * @property {number} from - The starting offset of the edited text.
+ * @property {number} [to] - The ending offset of the edited text.
+ */
+
+
+export class TextEdition extends Operation {
+    /**
+     * @param {import('$lib/states/block.svelte').Block} block
+     * @param {TextEditionData} data
+     */
+    constructor(block, data) {
+        super(block, 'edit', data);
+    }
+
+    get debug() {
+        if (!this.data.text) return `Delete ${this.data.from} to ${this.data.to ?? this.data.from}`;
+        if (!this.data.to || this.data.to === this.data.from) return `Insert "${this.data.text}" at ${this.data.from}`;
+        return `Replace from ${this.data.from} to ${this.data.to} with "${this.data.text}"`;
+    }
+}

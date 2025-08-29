@@ -81,7 +81,10 @@ export class Codex extends MegaBlock {
             $effect(() => {
                 if (this.element) {
                     this.selection.observe(this.element);
+                    this.enforceRequiredStyles();
                     init.onInit?.(this) || onInit(this);
+
+                    
                 }
             })
         })
@@ -89,6 +92,27 @@ export class Codex extends MegaBlock {
     
     /** @type {HTMLDivElement?} */
     element = $state(null);
+    
+    /**
+     * Enforce required CSS styles on the element
+     * Forces user-select: text, white-space: pre-wrap, word-break: break-word
+     */
+    enforceRequiredStyles() {
+        if (!this.element) return;
+        
+        const computedStyle = getComputedStyle(this.element);
+        const requiredStyles = {
+            'user-select': 'text',
+            'white-space': 'pre-wrap', 
+            'word-break': 'break-word'
+        };
+        
+        for (const [property, value] of Object.entries(requiredStyles)) {
+            if (computedStyle.getPropertyValue(property) !== value) {
+                this.element.style.setProperty(property, value, 'important');
+            }
+        }
+    }
     
     // debug = $derived({
     //     elements: this.children.map(child => child.debug || {}),

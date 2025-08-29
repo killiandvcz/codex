@@ -5,6 +5,8 @@
 * @property {string} handler - The name of the handler function to execute for this operation.
 */
 
+import { BlocksInsertion, BlocksRemoval, BlocksReplacement } from './blocks/operations/block.ops';
+
 /**
  * @typedef {new (...args: any[]) => Block} BlockConstructor
  */
@@ -40,6 +42,12 @@
  * @property {Object} [metadata] - Metadata associated with the block.
  */
 
+/**
+ * @typedef {Object} BlockData
+ * @property {string} type - The type of the block.
+ * @property {BlockInit & {}} init - The initialization data for the block.
+ */
+
 
 export class Block {
     /** @type {BlockManifest} */
@@ -60,6 +68,18 @@ export class Block {
          * @type {Map<string, Function>}
          */
         this.methods = new Map();
+
+        /**
+         * A set of preparators available on the block.
+         * @type {Map<string, Function>}
+         */
+        this.preparators = new Map();
+
+        /**
+         * A set of executors available on the block.
+         * @type {Map<string, Function>}
+         */
+        this.executors = new Map();
 
         this.method('delete', () => this.rm());
     }
@@ -136,14 +156,19 @@ export class Block {
     /** @param {String} operation */
     supports = operation => this.manifest?.operations && operation in this.manifest.operations || false;
     
-    /** @param {String} operation @param {Array<any>} params */
-    execute = (operation, ...params) => {
-        const handlerName = this.manifest?.operations?.[operation]?.handler;
-        /** @type {Function?} */
-        const handler = handlerName && this[handlerName];
-        if (!handler) throw new Error(`Handler for operation "${operation}" not found in block "${this.type}".`);
-        if (typeof handler !== 'function') throw new Error(`Handler "${handlerName}" is not a function in block "${this.type}".`);
-        return handler(...params);
+
+    /**
+     * Adds an executor to the block.
+     * @param {String} name
+     * @param {BlockMethod} callback
+     */
+    executor = (name, callback) => this.executors.set(name, callback);
+
+    /** @param {String} operation @param {...any} args */
+    execute = (operation, ...args) => {
+        const executor = this.executors.get(operation);
+        if (!executor) throw new Error(`No executor found for "${operation}" in block "${this.type}".`);
+        return executor(...args);
     }
 
     /**
@@ -164,6 +189,39 @@ export class Block {
         const method = this.methods.get(name);
         if (!method) throw new Error(`Method "${name}" not found in block "${this.type}".`);
         return method(...args);
+    }
+
+
+    /**
+     * Adds a preparator to the block.
+     * @param {String} name
+     * @param {BlockMethod} callback
+     */
+    preparator = (name, callback) => this.preparators.set(name, callback);
+
+    /**
+     * Prepares data for a specific operation.
+     * @param {String} name
+     * @param {Object} data
+     */
+    prepare = (name, data) => {
+        const preparator = this.preparators.get(name);
+        if (!preparator) throw new Error(`No preparator found for "${name}" in block "${this.type}".`);
+        return preparator(data);
+    }
+
+
+    /**
+     * Adds a triple to the block.
+     * @param {String} name
+     * @param {BlockMethod} preparator
+     * @param {BlockMethod} executor
+     * @param {BlockMethod} method
+     */
+    trine = (name, preparator, executor, method) => {
+        this.preparator(name, preparator);
+        this.executor(name, executor);
+        this.method(name, method);
     }
 
     /**
@@ -203,6 +261,10 @@ export class MegaBlock extends Block {
     /** @param {import('./codex.svelte').Codex?} codex*/
     constructor(codex) {
         super(codex);
+
+        this.trine('insert', this.prepareInsert, this.insert, this.applyInsert);
+        this.trine('remove', this.prepareRemove, this.remove, this.applyRemove);
+        this.trine('replace', this.prepareReplace, this.replace, this.applyReplace);
     }
 
     /** @type {MegaBlockManifest} */
@@ -210,6 +272,7 @@ export class MegaBlock extends Block {
         return this.constructor.manifest;
     }
 
+    /** @type {Record<string, new (...args: any[]) => T>} */
     get blocks() {
         return this.manifest.blocks;
     }
@@ -231,6 +294,182 @@ export class MegaBlock extends Block {
     
     /** @param {Block} block */
     contains = block => this.recursive.includes(block);
+
+    // PREPARATORS
+
+    /**
+     * Prepares the insertion of blocks.
+     * @param {import('./blocks/operations/block.ops').BlocksInsertionData & {
+     *  block: BlockData
+     * }} data
+     */
+    prepareInsert = data => {
+        let {offset} = data;
+
+        if (!offset) offset = this.children.length;
+        if (offset < 0) offset = this.children.length + offset + 1;
+        if (offset < 0) offset = 0;
+        if (offset > this.children.length) offset = this.children.length;
+
+        if (data.block && data.blocks) throw new Error('Cannot insert both "block" and "blocks" at the same time.');
+        if (data.block) data.blocks = [data.block];
+        if (!data.blocks || !data.blocks.length) throw new Error('No blocks to insert.');
+
+        return [
+            new BlocksInsertion(this, {
+                offset,
+                blocks: data.blocks
+            })
+        ]
+    }
+
+    /**
+     * 
+     * @param {import('./blocks/operations/block.ops').BlocksRemovalData & {
+     * id?: string,
+     * }} data 
+     */
+    prepareRemove = data => {
+        let { id, ids } = data;
+
+        if (id && ids) throw new Error('Cannot provide both "id" and "ids" to remove blocks.');
+        if (id) ids = [id];
+        if (!ids || !ids.length) throw new Error('No ids provided to remove blocks.');
+
+        return [
+            new BlocksRemoval(this, {
+                ids
+            })
+        ];
+    }
+
+    /**
+     * Prepares the splicing of blocks.
+     * @param {import('./blocks/operations/block.ops').BlocksReplacementData & {
+     * block: BlockData
+     * }} data
+     */
+    prepareReplace = data => {
+        let {from, to} = data;
+
+        if (from < 0) from = this.children.length + from + 1;
+        if (from < 0) from = 0;
+        if (!to) to = from;
+        if (to < 0) to = this.children.length + to + 1;
+        if (to < from) to = from;
+
+        if (data.block && data.blocks) throw new Error('Cannot insert both "block" and "blocks" at the same time.');
+        if (data.block) data.blocks = [data.block];
+        if (!data.blocks || !data.blocks.length) throw new Error('No blocks to insert.');
+
+        return [
+            new BlocksReplacement(this, {
+                from,
+                to,
+                blocks: data.blocks
+            })
+        ];
+    }
+
+    // EXECUTORS
+
+    /**
+     * Inserts a block into the mega block.
+     * @param {import('./blocks/operations/block.ops').BlocksInsertionData & {
+     *  block: BlockData
+     * }} data
+     */
+    insert = data => {
+        const ops = this.prepareInsert(data);
+        return this.codex?.tx(ops).execute();
+    }
+
+    /**
+     * Removes a block from the mega block.
+     * @param {import('./blocks/operations/block.ops').BlocksRemovalData & {
+     *  id?: string,
+     * }} data 
+     */
+    remove = data => {
+        const ops = this.prepareRemove(data);
+        return this.codex?.tx(ops).execute();
+    }
+
+    /**
+     * Prepares the splicing of blocks.
+     * @param {import('./blocks/operations/block.ops').BlocksReplacementData & {
+     *  block: BlockData
+     * }} data
+     */
+    replace = data => {
+        const ops = this.prepareReplace(data);
+        return this.codex?.tx(ops).execute();
+    }
+
+    // APPLYERS
+
+    /**
+     * Inserts data into the block.
+     * @param {{
+     *  offset: number,
+     *  blocks: BlockData[]
+     * }} data 
+     */
+    applyInsert = data => {
+        /** @type {T[]} */
+        const blocks = data.blocks.map(({type, init}) => {
+            const B = this.blocks[type];
+            if (!B) throw new Error(`Block type "${type}" not found in mega block.`);
+            return new B(this.codex, init);
+        }).filter(b => b instanceof Block);
+
+        this.children = [
+            ...this.children.slice(0, data.offset),
+            ...blocks,
+            ...this.children.slice(data.offset)
+        ];
+
+        return blocks;
+    }
+
+    /**
+     * @param {{
+     * ids: string[]
+     * }} data 
+     */
+    applyRemove = data => {
+        const removed = this.children.filter(child => data.ids.includes(child.id));
+        this.children = this.children.filter(child => !data.ids.includes(child.id));
+        return removed;
+    }
+
+    /**
+     * @param {{
+     * from: number,
+     * to: number,
+     * blocks: BlockData[]
+     * }} data 
+     */
+    applyReplace = data => {
+        const blocks = data.blocks?.map(({type, init}) => {
+            const B = this.blocks[type];
+            if (!B) throw new Error(`Block type "${type}" not found in mega block.`);
+            return new B(this.codex, init);
+        }).filter(b => b instanceof Block) || [];
+
+        const removed = [...this.children].slice(data.from, data.to);
+
+        this.children = [
+            ...this.children.slice(0, data.from),
+            ...blocks,
+            ...this.children.slice(data.to)
+        ];
+
+        return {removed, added: blocks};
+    }
+
+
+    // TRANSFORMERS
 
     toJSON() {
         return {

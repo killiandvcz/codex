@@ -194,7 +194,7 @@ export class Paragraph extends MegaBlock {
                             block.focus(new Focus(0, 0));
                         } else if (offset > 0 && offset < block.text.length) {
                             this.log('Split text block at offset:', offset);
-                            const newText = block.split(offset);
+                            const newText = block.$split(offset);
                             if (newText) {
                                 this.children = [
                                     ...this.children.filter(child => child.index <= block.index),
@@ -310,7 +310,7 @@ export class Paragraph extends MegaBlock {
 
         const afterBlocks = (splittingBlock && this.children.filter(child => child.index > splittingBlock.index && !child.last)) || [];
 
-        const startBlock = splittingBlock instanceof Text ? splittingBlock.split(offset - splittingBlock.start) : null;
+        const startBlock = splittingBlock instanceof Text ? splittingBlock.$split(offset - splittingBlock.start) : null;
         
         this.children = this.children.filter(child => !(afterBlocks.includes(child)));
         
@@ -366,7 +366,7 @@ export class Paragraph extends MegaBlock {
             const child = this.children.find(c => c.start <= at && c.end >= at);
             if (!child) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
             this.log(`Joining children at index ${at} in paragraph ${this.index}. Found child:`, child);
-            if (child instanceof Text) child.split(at - child.start);
+            if (child instanceof Text) child.$split(at - child.start);
             const childIndex = this.children.indexOf(child);
             if (childIndex === -1) throw new Error(`Invalid child index ${childIndex} for joining children in paragraph ${this.index}.`);
 

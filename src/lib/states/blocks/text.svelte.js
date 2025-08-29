@@ -1,28 +1,28 @@
 import { untrack } from 'svelte';
 import { Block } from '../block.svelte';
-import { TextDeleteOperation, TextInsertOperation } from './operations/text.ops';
+import { TextDeleteOperation, TextEdition, TextInsertOperation } from './operations/text.ops';
 import { Focus } from '$lib/values/focus.values';
 import { Transaction } from '$lib/utils/operations.utils';
 
 /**
- * @typedef {import('../block.svelte').BlockInit & {
- *   text?: String,
- *   bold?: Boolean,
- *   italic?: Boolean,
- *   underline?: Boolean,
- *   strikethrough?: Boolean,
- *   code?: Boolean
- * }} TextInit
- */
+* @typedef {import('../block.svelte').BlockInit & {
+*   text?: String,
+*   bold?: Boolean,
+*   italic?: Boolean,
+*   underline?: Boolean,
+*   strikethrough?: Boolean,
+*   code?: Boolean
+* }} TextInit
+*/
 
 /**
- * @typedef {import('../block.svelte').BlockObject & TextInit & {type: 'text'}} TextObject
- */
+* @typedef {import('../block.svelte').BlockObject & TextInit & {type: 'text'}} TextObject
+*/
 
 
 /**
- * @extends {Block}
- */
+* @extends {Block}
+*/
 export class Text extends Block {
     /** @type {import('../block.svelte').BlockManifest} */
     static manifest = {
@@ -37,30 +37,29 @@ export class Text extends Block {
             id: init.id,
             metadata: init.metadata || {}
         });
-
+        
         this.text = init.text || '';
         this.bold = init.bold || false;
         this.italic = init.italic || false;
         this.underline = init.underline || false;
         this.strikethrough = init.strikethrough || false;
         this.code = init.code || false;
-
+        
         
         $effect.root(() => {
             $effect(() => {
                 this.element && untrack(() => {
                     if (this.element) {
-                        this.element.innerText = this.text;
-                        if (!this.element.innerHTML.trim()) {
-                            this.element.innerHTML = '<br>';
-                        }
+                        this.element.textContent = this.text;
                     }
                 })
             })
         });
-
+        
         this.method('insert', this.handleInsert);
         this.method('delete', this.handleDelete);
+
+        this.trine("edit", this.prepareEdit, this.edit, this.applyEdit);
     }
     
     /** @type {import('../systems/textSystem.svelte').TextSystem?} */
@@ -109,7 +108,7 @@ export class Text extends Block {
             }
             const startOffset = localrange.startOffset;
             const endOffset = localrange.endOffset;
-
+            
             return {
                 start: startOffset,
                 end: endOffset,
@@ -123,28 +122,30 @@ export class Text extends Block {
     /** @param {KeyboardEvent} e @param {Function} ascend */
     onkeydown = (e, ascend) => {
         if (e.key !== 'Backspace' && e.key !== 'Delete') return ascend();
-
+        
         e.preventDefault();
         
         if (!this.selection) return;
-
+        
         const isBackspace = e.key === 'Backspace';
         const { start, end } = this.selection;
-
+        
         if (this.selection.length > 0) {
-            this.executeDelete(start, end, start);
-            return;
-        }
-
-        if ((isBackspace && start === 0) || (!isBackspace && end === this.text.length)) {
+            this.edit({ from: start, to: end });
+            this.focus(new Focus(start, start));
+        } else if ((isBackspace && start === 0) || (!isBackspace && end === this.text.length)) {
             return ascend();
+        } else {
+            const from = isBackspace ? start - 1 : start;
+            const to = isBackspace ? start : start + 1;
+            this.edit({
+                from,
+                to
+            })
+            this.focus(new Focus(from, from));
         }
-
-        const from = isBackspace ? start - 1 : start;
-        const to = isBackspace ? start : start + 1;
-        this.executeDelete(from, to, from);
     }
-
+    
     executeDelete = (from, to, focusPosition) => {
         const tx = this.codex?.tx([
             new TextDeleteOperation(this, { from, to })
@@ -167,63 +168,61 @@ export class Text extends Block {
     
     /** @param {InputEvent} e */
     onbeforeinput = e => {
+        this.log('BEFORE INPUT EVENT', e);
         if (e.inputType === 'insertText' && e.data) {
-            const deletion = this.selection && this.selection.length > 0;
+            this.log('BEFORE INPUT', e.data);
             const {start, end} = this.selection || {};
-            const tx = new Transaction([
-                ...(deletion ? [new TextDeleteOperation(this, {
-                    from: start,
-                    to: end
-                })] : []),
-                new TextInsertOperation(this, {
-                    text: e.data,
-                    offset: this.selection ? this.selection.start : this.text.length
-                })
-            ]); 
-            this.codex?.history?.add(tx);
+            this.edit({
+                text: e.data,
+                from: start || this.text.length,
+                to: end
+            });
+            e.preventDefault();
+
+            this.focus(new Focus((start ?? this.text.length) + e.data.length, (start ?? this.text.length) + e.data.length));
         }
-        // e.preventDefault();
     }
     
     /** Refreshes the text content from the element */
     refresh = () => {
-        if (this.element) this.text = this.element.innerText;
+        if (this.element) this.text = this.element.textContent;
         else this.text = '';
     }
     
     /** Resyncs the text content with the element */
     resync = () => {
         if (this.element) {
-            this.element.innerText = this.text;
-            if (!this.element.innerHTML.trim()) {
-                this.element.innerHTML = '<br>';
-            }
+            this.element.textContent = this.text;
+            // if (!this.element.textContent.trim()) {
+            //     this.element.textContent = '';
+            // }
+            this.log('RESYNC', JSON.stringify(this.element.textContent));
         }
-    }
-    
-    /** @param {Number} offset */
-    truncate = (offset) => {
-        if (offset < 0 || offset > this.text.length) {
-            throw new Error(`Offset ${offset} is out of bounds for text "${this.text}".`);
-        }
-        this.text = this.text.slice(0, offset);
-        this.resync();
-        this.refresh();
     }
     
     /** @param {Number} offset */
     split = (offset) => {
-        if (offset < 0 || offset > this.text.length) {
-            return null; // No split if offset is out of bounds
+        const remainder = this.text.slice(offset);
+        
+        const op = new TextDeleteOperation(this, {
+            from: offset,
+            to: this.text.length
+        });
+        
+        return {
+            operation: op,
+            remainder: {
+                type: 'text',
+                data: {
+                    text: remainder,
+                    bold: this.bold,
+                    italic: this.italic,
+                    underline: this.underline,
+                    strikethrough: this.strikethrough,
+                    code: this.code
+                }
+            }
         }
-        if (offset === 0 || offset === this.text.length) {
-            return null;
-        }
-        const newText = this.text.slice(offset);
-        this.text = this.text.slice(0, offset);
-        this.resync();
-        this.refresh();
-        return this.codex && (newText ? new Text(this.codex, { text: newText, bold: this.bold, italic: this.italic, underline: this.underline, strikethrough: this.strikethrough, code: this.code }) : null);
     }
     
     /** @param {String} text @param {Number} offset */
@@ -270,28 +269,28 @@ export class Text extends Block {
         textBlock.delete(0, -1);
         // this.focus(new Focus(end, end));
     }
-
+    
     /**
-     * @param {Focus} f 
-     * @param {Number} [attempts=0]
-     * @returns
-     */
+    * @param {Focus} f 
+    * @param {Number} [attempts=0]
+    * @returns
+    */
     focus = (f, attempts) => requestAnimationFrame(() => {
         if (this.element) {
             const data = this.getFocusData(f);
             if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset)
-            else console.warn('Text focus data is not available yet.');
+                else console.warn('Text focus data is not available yet.');
         } else {
             attempts ??= 0;
             if (attempts < 10) this.focus(f, attempts + 1)
-            else console.warn('Failed to focus text block after 10 attempts.');
+                else console.warn('Failed to focus text block after 10 attempts.');
         }
     })
-
+    
     /**
-     * @param {Focus} f
-     * @returns
-     */
+    * @param {Focus} f
+    * @returns
+    */
     getFocusData = (f) => {
         let { start, end } = f;
         if (start < 0) start = this.text.length + (start + 1);
@@ -317,8 +316,8 @@ export class Text extends Block {
             return;
         }
     }
-
-
+    
+    
     /** @returns {TextObject} */
     toJSON() {
         return {
@@ -332,24 +331,144 @@ export class Text extends Block {
             ...(this.code ? { code: this.code } : {}),
         };
     }
-
+    
     toMarkdown() {
-
+        
     }
-
+    
+    // COMMANDS :
+    
+    
+    /** @param {Number} offset */
+    $split = (offset) => {
+        if (offset < 0 || offset > this.text.length) {
+            return null; // No split if offset is out of bounds
+        }
+        if (offset === 0 || offset === this.text.length) {
+            return null;
+        }
+        const newText = this.text.slice(offset);
+        this.text = this.text.slice(0, offset);
+        this.resync();
+        this.refresh();
+        return this.codex && (newText ? new Text(this.codex, { text: newText, bold: this.bold, italic: this.italic, underline: this.underline, strikethrough: this.strikethrough, code: this.code }) : null);
+    }
+    
+    /** @param {String} text @param {Number} offset */
+    $insert = (text, offset) => {
+        if (offset < 0 || offset > this.text.length) {
+            throw new Error(`Offset ${offset} is out of bounds for text "${this.text}".`);
+        }
+        this.text = this.text.slice(0, offset) + text + this.text.slice(offset);
+        this.resync();
+        this.refresh();
+    }
+    
+    /** 
+    * Deletes a range of text from the block.
+    * @param {Number} from @param {Number} to 
+    * @returns {Boolean} Returns true if the block was deleted, false otherwise.
+    */
+    $delete = (from, to) => {
+        this.log('DELETE', { from, to });
+        if (from === to) return false; // No-op if the range is empty
+        if (from < 0) from = this.text.length + (from + 1);
+        if (to < 0) to = this.text.length + (to + 1);
+        if (to > this.text.length) to = this.text.length;
+        if (from < 0 || to > this.text.length || from > to) throw new Error(`Invalid range from ${from} to ${to} for text "${this.text}".`);
+        this.text = this.text.slice(0, from) + this.text.slice(to);
+        if (!this.text.trim()) { return this.rm() };
+        this.resync();
+        this.refresh();
+        return false;
+    }
+    
+    
     /**
-     * @param {import('./operations/text.ops').TextDeleteOperationData} data 
-     */
+    * @param {import('./operations/text.ops').TextDeleteOperationData} data 
+    */
     handleDelete = (data) => {
         const { from, to } = data;
         this.delete(from, to);
     }
-
+    
     /**
-     * @param {import('./operations/text.ops').TextInsertOperation} data 
-     */
+    * @param {import('./operations/text.ops').TextInsertOperation} data 
+    */
     handleInsert = (data) => {
         const { text, offset } = data;
         this.insert(text, offset);
+    }
+    
+    
+    
+    /**
+    * @param {{
+    *   text: string,
+    *   offset: number
+    * }} data 
+    */
+    applyInsert = data => {
+        const { text, offset } = data;
+        if (offset < 0 || offset > this.text.length) {
+            throw new Error(`Offset ${offset} is out of bounds for text "${this.text}".`);
+        }
+        this.text = this.text.slice(0, offset) + text + this.text.slice(offset);
+        this.resync();
+        this.refresh();
+    }
+ 
+    /**
+     * @param {{
+     * text?: string,
+     * from: number,
+     * to?: number
+     * }} data 
+     */
+    prepareEdit = data => {
+        let { text = "", from, to } = data;
+        if (!from) throw new Error('From is required for text edit.');
+        if (from < 0) from = this.text.length + (from + 1);
+        if (from < 0) from = 0;
+        if (from > this.text.length) from = this.text.length;
+        to ??= from;
+        if (to < 0) to = this.text.length + (to + 1);
+        if (to < from) to = from;
+        if (to > this.text.length) to = this.text.length;
+
+        return [
+            new TextEdition(this, {
+                text,
+                from,
+                to
+            })
+        ]
+    }
+
+    /**
+     * @param {{
+     * text?: string,
+     * from: number,
+     * to?: number
+     * }} data 
+     */
+    edit = data => {
+        const ops = this.prepareEdit(data);
+        return this.codex?.tx(ops).execute();
+    }
+    
+    /**
+     * @param {{
+     * text?: string,
+     * from: number,
+     * to?: number
+     * }} data 
+     */
+    applyEdit = data => {
+        let {text = "", from, to} = data;
+        to = to ?? from;
+        this.text = this.text.slice(0, from) + text + this.text.slice(to);
+        this.resync();
+        this.refresh();
     }
 }
