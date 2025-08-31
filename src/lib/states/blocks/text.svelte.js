@@ -2,7 +2,7 @@ import { untrack } from 'svelte';
 import { Block } from '../block.svelte';
 import { TextDeleteOperation, TextEdition, TextInsertOperation } from './operations/text.ops';
 import { Focus } from '$lib/values/focus.values';
-import { executor, Transaction } from '$lib/utils/operations.utils';
+import { executor, SMART, Transaction } from '$lib/utils/operations.utils';
 
 /**
 * @typedef {import('../block.svelte').BlockInit & {
@@ -36,14 +36,13 @@ export class Text extends Block {
             id: init.id,
             metadata: init.metadata || {}
         });
-        
+    
         this.text = init.text || '';
         this.bold = init.bold || false;
         this.italic = init.italic || false;
         this.underline = init.underline || false;
         this.strikethrough = init.strikethrough || false;
         this.code = init.code || false;
-        
         
         $effect.root(() => {
             $effect(() => {
@@ -95,6 +94,7 @@ export class Text extends Block {
         if (this.selected && range && this.element) {
             const localrange = range.cloneRange();
             const textnode = this.element.childNodes[0];
+            if (!textnode) return;
             try {
                 if (range.comparePoint(textnode, 0) >= 0) {
                     localrange.setStart(textnode, 0);
@@ -103,7 +103,7 @@ export class Text extends Block {
                     localrange.setEnd(textnode, this.text.length);
                 }
             } catch (e) {
-                console.error(e);
+                console.error(e, textnode);
             }
             const startOffset = localrange.startOffset;
             const endOffset = localrange.endOffset;
@@ -128,7 +128,7 @@ export class Text extends Block {
         
         const isBackspace = e.key === 'Backspace';
         const { start, end } = this.selection;
-        
+        this.log('KEYDOWN', e.key);
         if (this.selection.length > 0) {
             this.edit({ from: start, to: end });
             this.focus(new Focus(start, start));
@@ -137,11 +137,14 @@ export class Text extends Block {
         } else {
             const from = isBackspace ? start - 1 : start;
             const to = isBackspace ? start : start + 1;
+            const length = to - from;
+            this.log(`Deleting ${length} character(s) from ${from} to ${to}. Remains ${this.text.length} character(s).`);
+
             this.edit({
                 from,
                 to
             })
-            this.focus(new Focus(from, from));
+            this.focus(new Focus(from, from))
         }
     }
     
@@ -167,9 +170,7 @@ export class Text extends Block {
     
     /** @param {InputEvent} e */
     onbeforeinput = e => {
-        this.log('BEFORE INPUT EVENT', e);
         if (e.inputType === 'insertText' && e.data) {
-            this.log('BEFORE INPUT', e.data);
             const {start, end} = this.selection || {};
             this.edit({
                 text: e.data,
@@ -177,7 +178,6 @@ export class Text extends Block {
                 to: end
             });
             e.preventDefault();
-
             this.focus(new Focus((start ?? this.text.length) + e.data.length, (start ?? this.text.length) + e.data.length));
         }
     }
@@ -195,14 +195,14 @@ export class Text extends Block {
             // if (!this.element.textContent.trim()) {
             //     this.element.textContent = '';
             // }
-            this.log('RESYNC', JSON.stringify(this.element.textContent));
         }
     }
     
     /** @param {Number} offset */
     split = (offset) => {
         const remainder = this.text.slice(offset);
-        
+        if (!remainder) return;
+
         const op = new TextDeleteOperation(this, {
             from: offset,
             to: this.text.length
@@ -277,12 +277,15 @@ export class Text extends Block {
     focus = (f, attempts) => requestAnimationFrame(() => {
         if (this.element) {
             const data = this.getFocusData(f);
-            if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset)
-                else console.warn('Text focus data is not available yet.');
+            if (data) {
+                this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
+                return true;
+            }
+            else return console.warn('Text focus data is not available yet.');
         } else {
             attempts ??= 0;
-            if (attempts < 10) this.focus(f, attempts + 1)
-                else console.warn('Failed to focus text block after 10 attempts.');
+            if (attempts < 10) return this.focus(f, attempts + 1);
+            else return console.warn('Failed to focus text block after 10 attempts.');
         }
     })
     
@@ -417,28 +420,78 @@ export class Text extends Block {
         this.refresh();
     }
 
+    getStyles = () => ({
+        bold: this.bold,
+        italic: this.italic,
+        underline: this.underline,
+        strikethrough: this.strikethrough,
+        code: this.code
+    });
 
+    /** @param {Number} index */
+    normalizeIndex = (index) => {
+        if (index < 0) index = this.text.length + index + 1;
+        return Math.max(0, Math.min(index, this.text.length));
+    }
 
- 
-    /** @param {EditData} data  */
-    prepareEdit = data => {
-        let { text = "", from, to } = data;
-        if (!from && !(from === 0)) throw new Error('From is required for text edit.');
-        if (from < 0) from = this.text.length + (from + 1);
-        if (from < 0) from = 0;
-        if (from > this.text.length) from = this.text.length;
-        to ??= from;
-        if (to < 0) to = this.text.length + (to + 1);
+    /** @param {EditData|import('$lib/utils/operations.utils').SMART} data  */
+    normalizeEditParams = (data) => {
+        const isSmartMode = data === SMART;
+        
+        let { text = "", from, to } = isSmartMode 
+        ? { from: this.selection?.start, to: this.selection?.end }
+        : data;
+        
+        // Validation
+        if (from === undefined && from !== 0) {
+            throw new Error('From is required for text edit.');
+        }
+        
+        // Normalisation des indices
+        from = this.normalizeIndex(from);
+        to = to !== undefined ? this.normalizeIndex(to) : from;
+        
+        // Assurer from <= to
         if (to < from) to = from;
-        if (to > this.text.length) to = this.text.length;
+        
+        return { text, from, to };
+    }
 
+
+    /**
+    * @param {{
+    *   from: number,
+    *   to: number
+    * }|import('$lib/utils/operations.utils').SMART} data
+    */
+    getSplittingData = (data) => {
+        const { from, to } = this.normalizeEditParams(data);
+        
+        return {
+            before: from > 0 ? {
+                text: this.text.slice(0, from),
+                ...this.getStyles()
+            } : null,
+            
+            removed: from < to ? {
+                text: this.text.slice(from, to),
+                ...this.getStyles()
+            } : null,
+            
+            after: to < this.text.length ? {
+                text: this.text.slice(to),
+                ...this.getStyles()
+            } : null,
+        };
+    }
+
+    /** @param {EditData|import('$lib/utils/operations.utils').SMART} data  */
+    prepareEdit = data => {
+        const params = this.normalizeEditParams(data);
+        
         return [
-            new TextEdition(this, {
-                text,
-                from,
-                to
-            })
-        ]
+            new TextEdition(this, params)
+        ];
     }
 
     /** @type {import('$lib/utils/operations.utils').Executor<EditData>} */

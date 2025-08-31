@@ -45,7 +45,7 @@ import { BlocksInsertion, BlocksRemoval, BlocksReplacement } from './blocks/oper
 /**
  * @typedef {Object} BlockData
  * @property {string} type - The type of the block.
- * @property {BlockInit & {}} init - The initialization data for the block.
+ * @property {BlockInit & Object<string, any>} [init] - The initialization data for the block.
  */
 
 
@@ -185,7 +185,6 @@ export class Block {
      * @returns {any}
      */
     call = (name, ...args) => {
-        this.log(`Calling method "${name}" with args:`, args);
         const method = this.methods.get(name);
         if (!method) throw new Error(`Method "${name}" not found in block "${this.type}".`);
         return method(...args);
@@ -300,7 +299,7 @@ export class MegaBlock extends Block {
     /**
      * Prepares the insertion of blocks.
      * @param {import('./blocks/operations/block.ops').BlocksInsertionData & {
-     *  block: BlockData
+     *  block?: BlockData
      * }} data
      */
     prepareInsert = data => {

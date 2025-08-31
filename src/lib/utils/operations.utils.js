@@ -1,3 +1,5 @@
+import { tick } from 'svelte';
+
 export class Operation {
     /** @param {import('../states/block.svelte').Block} block  @param {String} name @param {any} data @param {Operation} [undo] */
     constructor(block, name, data = {}, undo) {
@@ -7,8 +9,16 @@ export class Operation {
         this.undo = undo;
     }
 
-    execute() {
-        return this.block.call(this.name, this.data);
+    /**
+     * @param {Transaction} tx 
+     */
+    execute(tx) {
+        const result = this.block.call(this.name, this.data);
+        if (tx && tx instanceof Transaction) {
+            tx.results.push({ operation: this, result });
+            tx.executed.push(this);
+        }
+        return result;
     }
 
 
@@ -36,59 +46,44 @@ export class Transaction {
     constructor(ops = [], codex) {
         this.codex = codex;
         this.operations = new Set(ops);
-
-        /** @type {Transaction?} */
-        this._parent = null;
     }
 
-    get parent() {
-        return this._parent;
-    }
+    /** @type {Array<{ operation: Operation, result: any }>} */
+    results = [];
 
-    set parent(value) {
-        this._parent = value;
-    }
+    /** @type {Array<Operation>} */
+    executed = [];
 
+    async execute() {
+        if (this.codex) this.codex.history.current = this;
+        const beforeSelection = this.codex?.selection?.range;
 
-    /**
-     * @param {Transaction?} [tx]
-     */
-    setParent = (tx) => {
-        if (tx && tx instanceof Transaction) {
-            this._parent = tx;
-        }
-        return this;
-    }
-
-    execute() {
-        const executedOps = [];
-        const results = [];
-        
         try {
-            for (const op of this.operations) {
-                const result = op.execute();
-                results.push({ operation: op, result });
-                executedOps.push(op);
-            }
-            
-            if (this.codex) {
-                
-                this.codex.history.add(this);
-            }
-            
-            return results;
+            for (const op of this.operations) await Promise.resolve(op.execute(this));
+            await tick().then(() => this.commit());
+            return this.results;
         } catch (error) {
-            for (let i = executedOps.length - 1; i >= 0; i--) {
-                const op = executedOps[i];
+            for (let i = this.executed.length - 1; i >= 0; i--) {
+                const op = this.executed[i];
                 if (op.undo) {
                     try {
-                        op.undo.execute();
+                        op.undo.execute(this);
                     } catch (undoError) {
                         console.error('Erreur lors du rollback:', undoError);
                     }
                 }
             }
+            this.codex?.selection?.setRange(beforeSelection?.startContainer, beforeSelection?.startOffset, beforeSelection?.endContainer, beforeSelection?.endOffset);
             throw error;
+        } finally {
+            if (this.codex) this.codex.history.current = null;
+        }
+    }
+
+
+    commit = () => {
+        if (this.codex) {
+            this.codex.history.add(this);
         }
     }
 
@@ -109,22 +104,19 @@ export class Transaction {
 
 /**
  * @template T {object}
- * @typedef {function(T, Transaction=): any} Executor
+ * @typedef {function(T): Promise<any>} Executor
  */
 
 /**
  * @template T {object}
  * @param {import('../states/block.svelte').Block} block
  * @param {function(T): Operation[]} callback
- * @returns {function(T, Transaction=): any}
+ * @returns {Executor<T>}
  */
-export const executor = (block, callback) => (data, tx) => {
+export const executor = (block, callback) => (data) => {
     const ops = callback(data);
-
-    
-
-    return block.codex?.tx(ops, tx).execute();
+    return Promise.resolve(block.codex?.tx(ops).execute());
 }
 
 
-
+export const SMART = Symbol('smart');

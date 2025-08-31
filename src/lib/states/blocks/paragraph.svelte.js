@@ -5,7 +5,8 @@ import { paragraphStrategies } from "./strategies/paragraph.strategies";
 import { MERGEABLE, MergeData } from "../capabilities/merge.capability";
 import { Focus } from "$lib/values/focus.values";
 import { ParagraphBlockInsertion } from "./operations/paragraph.ops";
-import { BlocksRemoval } from "./operations/block.ops";
+import { BlocksInsertion, BlocksRemoval } from "./operations/block.ops";
+import { SMART } from "$lib/utils/operations.utils";
 
 /** 
 * @typedef {(import('./text.svelte').TextObject|import('./linebreak.svelte').LinebreakObject)[]} ParagraphContent
@@ -48,7 +49,7 @@ export class Paragraph extends MegaBlock {
         super(codex);
 
         this.method('delete', deletion => this.handleDelete(deletion));
-        this.method('insert', insertion => this.handleInsertBlocks(insertion));
+        // this.method('insert', insertion => this.handleInsertBlocks(insertion));
 
         $effect.root(() => {
             $effect(() => {
@@ -82,15 +83,12 @@ export class Paragraph extends MegaBlock {
             $effect(() => {
                 if (this.element && this.children) {
                     const empties = this.children.filter(child => child instanceof Text && !child.text);
-                    console.log(empties);
                     if (empties.length === 0) return;
-                    // const ops = empties.map(empty => new BlocksRemoval(this, {i}));
-                    const ops = [
-                        new BlocksRemoval(this, {ids: empties.map(empty => empty.id)})
-                    ];
-                    this.log('Removing empty text blocks:', empties, ops);
+                    const ops = [ new BlocksRemoval(this, {ids: empties.map(empty => empty.id)}) ];
 
-                    this.codex?.tx(ops).execute();   
+                    const selection = this.selection;
+                    this.codex?.effect(ops);
+                    if (selection.isInParagraph) this.focus(new Focus(selection.anchorOffset, selection.focusOffset));
                 }
             })
         });
@@ -105,8 +103,6 @@ export class Paragraph extends MegaBlock {
 
         const firstOffset = firstChild && firstChild.start + (firstChild instanceof Text ? firstChild.selection?.start : 0);
         const lastOffset = lastChild && lastChild.start + (lastChild instanceof Text ? lastChild.selection?.end : 1);
-
-        console.log(firstOffset, lastOffset)
 
         return {
             anchorOffset: firstOffset,
@@ -128,7 +124,6 @@ export class Paragraph extends MegaBlock {
     /** @type {Number} */
     end = $derived(this.start + this.length);
     
-    
     /** @param {InputEvent} e */
     oninput = e => {
         
@@ -141,6 +136,8 @@ export class Paragraph extends MegaBlock {
     onbeforeinput = e => {
         if (e.inputType === 'insertText' && e.data) {
             if (this.selection.isCollapsed && this.children.find(child => child.selected) instanceof Linebreak) {
+                const selected = this.children.find(c => c.selected);
+                const index = this.children.findIndex(c => c === selected);
                 const tx = this.codex?.tx([
                     new ParagraphBlockInsertion(this, {
                         blocks: [
@@ -151,13 +148,13 @@ export class Paragraph extends MegaBlock {
                                 },
                             }
                         ],
-                        offset: this.selection.anchorOffset || 0
+                        offset: index
                     })
                 ]);
-                const blocks = tx?.execute()?.[0]?.result;
-                if (blocks) {
-                    blocks.at(-1)?.focus?.(new Focus(-1, -1));
-                }
+                tx?.execute().then(r => {
+                    const blocks = r?.[0]?.result;
+                    if (blocks) blocks.at(-1)?.focus?.(new Focus(-1, -1));
+                });
             }
         }
     }
@@ -165,71 +162,129 @@ export class Paragraph extends MegaBlock {
     /** @param {KeyboardEvent} e */
     onkeydown = e => {
         if (!this.codex) return;
+
+        if (e.key === 'Enter') {
+            // const collapsed = this.codex?.selection.collapsed;
+            const selected = this.children?.filter(c => c.selected);
+            e.preventDefault();
+            if (e.shiftKey) {
+                const ops = [];
+                const first = selected[0];
+                const last = selected[selected.length - 1];
+                const offset = first && first.start + (first instanceof Text ? first.selection?.start : 0);
+
+                if (first === last) {
+                    const index = this.children.findIndex(c => c === first);
+                    if (first instanceof Text) {
+                        const data = first.getSplittingData(SMART);
+                        this.log('Splitting data:', data);
+
+                        if (data) {
+                            ops.push(...first.prepareEdit({
+                                from: first.selection?.start || 0,
+                                to: first.text.length
+                            }));
+                            ops.push(...this.prepareInsert({
+                                block: {
+                                    type: 'linebreak'
+                                },
+                                offset: index + 1
+                            }));
+                            if (data.after) {
+                                ops.push(...this.prepareInsert({
+                                    block: {
+                                        type: 'text',
+                                        init: data.after
+                                    },
+                                    offset: index + 2
+                                }));
+                            }
+                        }
+
+                        // const firstEdit = first.prepareEdit(SMART);
+                        // this.log('First edit:', firstEdit);
+                        // if (firstEdit) {
+                        //     ops.push(firstEdit.splitting.edit);
+                        //     ops.push(...this.prepareInsert({
+                        //         block: {
+                        //             type: 'linebreak'
+                        //         },
+                        //         offset: index + 1
+                        //     }));
+                        //     if (firstEdit.splitting.splitted) ops.push(...this.prepareInsert({
+                        //         block: {
+                        //             type: 'text',
+                        //             init: firstEdit.splitting.splitted
+                        //         },
+                        //         offset: index + 2
+                        //     }));
+                        // }
+
+
+
+                    } else if (first instanceof Linebreak) {
+                        ops.push(...this.prepareInsert({
+                            block: {
+                                type: 'linebreak'
+                            },
+                            offset: index + 1
+                        }));
+                    }
+                }
+
+
+                this.codex?.tx(ops).execute().then(r => {
+                    this.focus(new Focus(offset + 1, offset + 1));
+                });
+
+            }
+        }
+
         if (this.codex?.selection.collapsed) {
             const child = this.children.find(c => c.selected);
             if (e.key === 'Enter') {
                 this.log('Enter pressed in paragraph:', this.index);
                 e.preventDefault();
                 if (e.shiftKey) {
-                    const block = this.codex?.selection.anchoredBlock;
-                    
-                    /** @param {import('./linebreak.svelte').Linebreak} linebreak */
-                    const handleLinebreak = linebreak => {
-                        if (!this.codex) return;
-                        const blocksBefore = this.children.filter(child => child.index <= linebreak.index);
-                        const blocksAfter = this.children.filter(child => child.index > linebreak.index);
-                        const newLinebreak = new Linebreak(this.codex);
-                        
-                        this.children = [
-                            ...blocksBefore,
-                            newLinebreak,
-                            ...blocksAfter,
-                        ];
-                        
-                        newLinebreak.focus();
-                    }
-                    
-                    if (block && block instanceof Linebreak) {
-                        handleLinebreak(block);
-                    } else if (block && block instanceof Text) {
-                        const offset = block.selection?.start;
-                        this.log('Shift + Enter pressed in text block:', block, 'at offset:', offset);
-                        if (offset === undefined || offset < 0) return;
-                        if (offset > block.text.length) return;
-                        const newLinebreak = new Linebreak(this.codex);
-                        if (offset === 0) {
-                            
-                            this.children = [
-                                ...this.children.filter(child => child.index < block.index),
-                                newLinebreak,
-                                ...this.children.filter(child => child.index >= block.index),
-                            ];
-                            block.focus(new Focus(0, 0));
-                        } else if (offset > 0 && offset < block.text.length) {
-                            this.log('Split text block at offset:', offset);
-                            const newText = block.$split(offset);
-                            if (newText) {
-                                this.children = [
-                                    ...this.children.filter(child => child.index <= block.index),
-                                    newLinebreak,
-                                    newText,
-                                    ...this.children.filter(child => child.index > block.index),
-                                ];
-                                newText.focus(new Focus(0, 0));
-                            }
-                            
-                        } else if (offset === block.text.length) {
-                            const isLinebreakAfter = this.children[block.index + 1] instanceof Linebreak;
-                            const add = 1;
-                            this.log('Inserting linebreak after block:', block.index + add);
-                            this.children = [
-                                ...this.children.filter(child => child.index <= block.index + add),
-                                newLinebreak,
-                                ...this.children.filter(child => child.index > block.index + add),
-                            ];
-                            newLinebreak.focus(new Focus(0, 0));
-                        }
-                    }
+                    // const block = this.children.find(c => c.selected);
+                    // const index = this.children.findIndex(c => c === block);
+                    // const offset = block && block.start + (block instanceof Text ? block.selection?.start : 0);
+
+
+                    // const ops = [];
+                    // const newLbOps = this.prepareInsert({
+                    //     block: {
+                    //         type: 'linebreak'
+                    //     },
+                    //     offset: index + 1
+                    // })
+
+
+                    // if (block && block instanceof Text) {
+                    //     const splittingData = block.split(block.selection?.start || -1);
+                    //     if (splittingData) {
+                    //         this.log('Splitting text block:', block, 'at offset:', splittingData);
+                    //         ops.push(splittingData.operation);
+                    //         ops.push(...newLbOps);
+                    //         ops.push(...this.prepareInsert({
+                    //             block: {
+                    //                 type: 'text',
+                    //                 init: splittingData.remainder.data
+                    //             },
+                    //             offset: index + 2
+                    //         }));
+                    //     } else {
+                    //         ops.push(...newLbOps);
+                    //     }
+                    // } else if (block && block instanceof Linebreak) {
+                    //     ops.push(...newLbOps);
+                    // }
+                    // this.log('Operations for Shift + Enter:', ops);
+
+                    // this.codex?.tx(ops).execute().then(r => {
+                    //     this.focus(new Focus(offset + 1, offset + 1));
+                    // });
+
                 } else {
                     const block = this.children.find(c => c.selected);
                     if (!block) return;

@@ -175,10 +175,34 @@ export class Codex extends MegaBlock {
     
     /** @param {KeyboardEvent} e */
     onkeydown = e => this.handleEvent(e, 'onkeydown', 'keydown');
-    
-    
 
-    /** @param {import('$lib/utils/operations.utils').Operation[]} ops @param {import('$lib/utils/operations.utils').Transaction?} [tx] */
-    tx = (ops, tx) => new Transaction(ops, this).setParent(tx);
+    /** @param {import('$lib/utils/operations.utils').Operation[]} ops */
+    tx = (ops) => new Transaction(ops, this)
+
+    /** @param {import('$lib/utils/operations.utils').Operation[]} ops  */
+    effect = (ops) => {
+        const current = this.history.current;
+
+        if (!current) return console.warn("No current transaction in history for effect");
+        if (!ops?.length) return console.warn("No operations provided for effect");
+
+        /** @type {any[]} */
+        const results = [];
+
+        ops.forEach(op => {
+            current.operations.add(op);
+            this.log("Executing effect operation:", op);
+            try {
+                const r = op.execute(current);
+                results.push(r);
+            } catch (error) {
+                console.error("Error executing operation:", error);
+                current.operations.delete(op);
+                return;
+            }
+        });
+
+        return results;
+    }
 
 }
