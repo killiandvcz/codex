@@ -83,8 +83,6 @@ export class Codex extends MegaBlock {
                     this.selection.observe(this.element);
                     this.enforceRequiredStyles();
                     init.onInit?.(this) || onInit(this);
-
-                    
                 }
             })
         })
@@ -180,7 +178,7 @@ export class Codex extends MegaBlock {
     
     
 
-    /** @param {import('$lib/utils/operations.utils').Operation[]} ops */
-    tx = ops => new Transaction(ops, this);
+    /** @param {import('$lib/utils/operations.utils').Operation[]} ops @param {import('$lib/utils/operations.utils').Transaction?} [tx] */
+    tx = (ops, tx) => new Transaction(ops, this).setParent(tx);
 
 }

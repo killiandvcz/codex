@@ -5,6 +5,7 @@ import { paragraphStrategies } from "./strategies/paragraph.strategies";
 import { MERGEABLE, MergeData } from "../capabilities/merge.capability";
 import { Focus } from "$lib/values/focus.values";
 import { ParagraphBlockInsertion } from "./operations/paragraph.ops";
+import { BlocksRemoval } from "./operations/block.ops";
 
 /** 
 * @typedef {(import('./text.svelte').TextObject|import('./linebreak.svelte').LinebreakObject)[]} ParagraphContent
@@ -54,10 +55,6 @@ export class Paragraph extends MegaBlock {
                 if (this.codex && this.element) {
                     const lastChild = this.children[this.children.length - 1];
                     if (!lastChild ) {
-                        // this.children = [...this.children, 
-                        //     new Linebreak(this.codex)
-                        // ];
-
                         const tx = this.codex?.tx([
                             new ParagraphBlockInsertion(this, {
                                 blocks: [
@@ -78,6 +75,22 @@ export class Paragraph extends MegaBlock {
                 if (this.element && this.children) {
                     const styles = this.children.map(child => child instanceof Text ? child.style : null).filter(style => style);
                     if (styles) this.normalize();
+                    
+                }
+            })
+
+            $effect(() => {
+                if (this.element && this.children) {
+                    const empties = this.children.filter(child => child instanceof Text && !child.text);
+                    console.log(empties);
+                    if (empties.length === 0) return;
+                    // const ops = empties.map(empty => new BlocksRemoval(this, {i}));
+                    const ops = [
+                        new BlocksRemoval(this, {ids: empties.map(empty => empty.id)})
+                    ];
+                    this.log('Removing empty text blocks:', empties, ops);
+
+                    this.codex?.tx(ops).execute();   
                 }
             })
         });
@@ -265,7 +278,6 @@ export class Paragraph extends MegaBlock {
             }
         }
     }
-    
     
     normalize = () => {
         if (!this.codex) return;

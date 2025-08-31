@@ -2,7 +2,7 @@ import { untrack } from 'svelte';
 import { Block } from '../block.svelte';
 import { TextDeleteOperation, TextEdition, TextInsertOperation } from './operations/text.ops';
 import { Focus } from '$lib/values/focus.values';
-import { Transaction } from '$lib/utils/operations.utils';
+import { executor, Transaction } from '$lib/utils/operations.utils';
 
 /**
 * @typedef {import('../block.svelte').BlockInit & {
@@ -18,7 +18,6 @@ import { Transaction } from '$lib/utils/operations.utils';
 /**
 * @typedef {import('../block.svelte').BlockObject & TextInit & {type: 'text'}} TextObject
 */
-
 
 /**
 * @extends {Block}
@@ -417,17 +416,14 @@ export class Text extends Block {
         this.resync();
         this.refresh();
     }
+
+
+
  
-    /**
-     * @param {{
-     * text?: string,
-     * from: number,
-     * to?: number
-     * }} data 
-     */
+    /** @param {EditData} data  */
     prepareEdit = data => {
         let { text = "", from, to } = data;
-        if (!from) throw new Error('From is required for text edit.');
+        if (!from && !(from === 0)) throw new Error('From is required for text edit.');
         if (from < 0) from = this.text.length + (from + 1);
         if (from < 0) from = 0;
         if (from > this.text.length) from = this.text.length;
@@ -445,25 +441,10 @@ export class Text extends Block {
         ]
     }
 
-    /**
-     * @param {{
-     * text?: string,
-     * from: number,
-     * to?: number
-     * }} data 
-     */
-    edit = data => {
-        const ops = this.prepareEdit(data);
-        return this.codex?.tx(ops).execute();
-    }
-    
-    /**
-     * @param {{
-     * text?: string,
-     * from: number,
-     * to?: number
-     * }} data 
-     */
+    /** @type {import('$lib/utils/operations.utils').Executor<EditData>} */
+    edit = executor(this, data => this.prepareEdit(data));
+
+    /** @param {EditData} data  */
     applyEdit = data => {
         let {text = "", from, to} = data;
         to = to ?? from;
@@ -472,3 +453,12 @@ export class Text extends Block {
         this.refresh();
     }
 }
+
+
+/**
+* @typedef {{
+*   text?: string,
+*   from: number,
+*   to?: number
+* }} EditData
+*/

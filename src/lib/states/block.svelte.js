@@ -322,7 +322,7 @@ export class MegaBlock extends Block {
             })
         ]
     }
-
+    // WOW
     /**
      * 
      * @param {import('./blocks/operations/block.ops').BlocksRemovalData & {

@@ -52,7 +52,7 @@ export class TextDeleteOperation extends Operation {
             offset: this.from
         }, this);
     }
-
+    // test
     get debug() {
         return `Delete from ${this.from} to ${this.to}`;
     }

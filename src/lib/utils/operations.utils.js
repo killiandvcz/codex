@@ -36,6 +36,28 @@ export class Transaction {
     constructor(ops = [], codex) {
         this.codex = codex;
         this.operations = new Set(ops);
+
+        /** @type {Transaction?} */
+        this._parent = null;
+    }
+
+    get parent() {
+        return this._parent;
+    }
+
+    set parent(value) {
+        this._parent = value;
+    }
+
+
+    /**
+     * @param {Transaction?} [tx]
+     */
+    setParent = (tx) => {
+        if (tx && tx instanceof Transaction) {
+            this._parent = tx;
+        }
+        return this;
     }
 
     execute() {
@@ -50,6 +72,7 @@ export class Transaction {
             }
             
             if (this.codex) {
+                
                 this.codex.history.add(this);
             }
             
@@ -76,3 +99,32 @@ export class Transaction {
     }
 
 }
+
+
+
+
+
+// UTILS
+
+
+/**
+ * @template T {object}
+ * @typedef {function(T, Transaction=): any} Executor
+ */
+
+/**
+ * @template T {object}
+ * @param {import('../states/block.svelte').Block} block
+ * @param {function(T): Operation[]} callback
+ * @returns {function(T, Transaction=): any}
+ */
+export const executor = (block, callback) => (data, tx) => {
+    const ops = callback(data);
+
+    
+
+    return block.codex?.tx(ops, tx).execute();
+}
+
+
+
