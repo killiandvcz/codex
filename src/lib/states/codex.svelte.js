@@ -17,6 +17,7 @@ import { TextSystem } from './systems/textSystem.svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { multiBlockBackspaceStrategy } from './strategies/multiBlockBackspace.svelte';
 import { Transaction } from '$lib/utils/operations.utils';
+import { History } from './history.svelte';
 
 export const initialComponents = {
     codex: CodexComponent,
@@ -64,8 +65,7 @@ export class Codex extends MegaBlock {
         
         this.selection = new CodexSelection(this);
 
-        /** @type {SvelteSet<import('$lib/utils/operations.utils').Transaction>} */
-        this.history = new SvelteSet();
+        this.history = new History();
         
         this.systems = new SvelteMap();
         for (const [name, System] of Object.entries(initialSystems)) {
