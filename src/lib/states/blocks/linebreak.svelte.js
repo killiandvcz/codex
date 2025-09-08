@@ -3,7 +3,7 @@ import { Block, MegaBlock } from "../block.svelte";
 import { Text } from "./text.svelte";
 
 /**
- * @typedef {import('../block.svelte').BlockObject & {
+ * @typedef {import('../block.svelte').BlockInit & {
  *  type: 'linebreak'
  * }} LinebreakObject
  */
@@ -49,13 +49,18 @@ export class Linebreak extends Block {
         return false;
     });
     
-    /** @param {KeyboardEvent} e @param {Function} ascend */
-    onkeydown = (e, ascend) => ascend();
+    /** @type {import('$lib/utils/block.utils').BlockListener<KeyboardEvent>} */
+    onkeydown = (e, ascend) => ascend({
+        block: this,
+        action: e.key === 'Backspace' ? 'delete' : undefined
+    });
 
-    /** @param {InputEvent} e @param {Function} ascend */
+    /** @type {import('$lib/utils/block.utils').BlockListener<InputEvent>} */
     onbeforeinput = (e, ascend) => {
         e.preventDefault();
-        ascend();
+        ascend({
+            block: this,
+        });
     }
 
     onfocus = () => {

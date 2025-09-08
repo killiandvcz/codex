@@ -102,7 +102,10 @@ export class Block {
     
     /** @type {MegaBlock?} */
     parent = $derived(this.type === "codex" ? null : this.codex?.recursive.find(block => block instanceof MegaBlock && block?.children.includes(this)) || this.codex);
-    
+
+    /** @type {MegaBlock[]} */
+    parents = $derived(this.parent ? [...this.parent.parents, this.parent] : []);
+
     /** @type {Block?} */
     globalBefore = $derived((this.index && this.codex?.recursive.find(block => block.index === this.index - 1)) || null);
     
@@ -156,6 +159,21 @@ export class Block {
     /** @param {String} operation */
     supports = operation => this.manifest?.operations && operation in this.manifest.operations || false;
     
+    /**
+     * @param {String} name 
+     * @param {Event} e 
+     * @param {*} data 
+     */
+    ascend = (name, e, data) => {
+        if (this.parents.length) {
+            const callableParent = this.parents.find(parent => typeof parent[name] === 'function');
+            if (callableParent) {
+                e.preventDefault();
+                callableParent[name](e, data);
+            }
+        }
+    }
+
 
     /**
      * Adds an executor to the block.

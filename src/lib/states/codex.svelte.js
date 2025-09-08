@@ -119,21 +119,14 @@ export class Codex extends MegaBlock {
     debug = $derived(`codex |\n${this.children.map(child => child.debug || {}).join(' + ')}`);
     
     
-    // findCommonParent = () => {
-        //     if (this.selection.collapsed) return this.selection.anchoredBlock?.parent;
-    //     if (this.selection.isMultiBlock) {
-    //         const parents = this.recursive.filter(block => )
-        //     }
-    // }
-    
-    
     /**
      * Generic event handler with ascension logic
      * @param {Event} e - The event object
      * @param {string} eventType - The event type (e.g., 'keydown', 'input', 'beforeinput')
      * @param {string} strategyTag - The strategy tag to look for
+     * @param {function(any): void} [ascendCallback] - Callback for handling ascended data
      */
-    handleEvent = (e, eventType, strategyTag) => {
+    handleEvent = (e, eventType, strategyTag, ascendCallback) => {
         const context = {event: e};
         let currentParent = this.selection?.parent;
 
@@ -154,11 +147,15 @@ export class Codex extends MegaBlock {
             if (handlers.length === 0) return;
             
             let handler = handlers.at(-1);
-            const ascend = () => {
+            /** @param {any} data */
+            const ascend = (data) => {
                 const hIndex = handlers.indexOf(handler);
                 if (hIndex > 0) {
                     handler = handlers[hIndex - 1];
-                    handler(e, ascend);
+                    handler(e, ascend, data);
+                } else if (ascendCallback && data) {
+                    // Event has ascended to codex level - use callback instead of full dispatch
+                    ascendCallback(data);
                 }
             };
             handler(e, ascend);
@@ -174,7 +171,9 @@ export class Codex extends MegaBlock {
     oninput = e => this.handleEvent(e, 'oninput', 'input');
     
     /** @param {KeyboardEvent} e */
-    onkeydown = e => this.handleEvent(e, 'onkeydown', 'keydown');
+    onkeydown = e => this.handleEvent(e, 'onkeydown', 'keydown', (data) => {
+        this.log("Ascended data to codex on keydown:", data);
+    });
 
     /** @param {import('$lib/utils/operations.utils').Operation[]} ops */
     tx = (ops) => new Transaction(ops, this)

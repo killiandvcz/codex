@@ -38,7 +38,7 @@ export class TextInsertOperation extends Operation {
 
 export class TextDeleteOperation extends Operation {
     /**
-     * @param {import('$lib/states/block.svelte').Block} block
+     * @param {import('$lib/states/blocks/text.svelte').Text} block
      * @param {TextDeleteOperationData} data
      * @param {Operation} [undo]
      */
@@ -70,7 +70,7 @@ export class TextDeleteOperation extends Operation {
 
 export class TextEdition extends Operation {
     /**
-     * @param {import('$lib/states/block.svelte').Block} block
+     * @param {import('$lib/states/blocks/text.svelte').Text} block
      * @param {TextEditionData} data
      */
     constructor(block, data) {

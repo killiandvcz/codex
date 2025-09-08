@@ -16,23 +16,40 @@ const replace = (paragraph, content) => {
 
     const between = paragraph.children.slice(paragraph.children.indexOf(start) + 1, paragraph.children.indexOf(end));
 
-    console.log(start.start, (start instanceof Text ? start.selection?.start : 0));
     const data = {
         startOffset: start.start + (start instanceof Text ? start.selection?.start : 0),
         endOffset: end.start + (end instanceof Text ? end.selection?.end : 0),
         startSelection: start.selection?.start || 0,
-        endSelection: end.selection?.end || 0
+        endSelection: end.selection?.end || 0,
+        startBlock: start,
+        endBlock: end
     }
 
-    between.forEach(b => b.rm());
+    const index = paragraph.children.indexOf(start);
 
-    end instanceof Linebreak ? end.rm() : end.delete(0, data.endSelection || -1);
-    start instanceof Linebreak ? start.rm() : start.delete(data.startSelection || 0, -1);
+    const ops = [];
 
-    if (content) paragraph.generate(content, data.startOffset, 'global');
-    if (content) paragraph.focus(new Focus(data.startOffset + 1, data.startOffset + 1));
-    else paragraph.focus(new Focus(data.startOffset , data.startOffset))
-    
+
+    if (between.length) ops.push(...paragraph.prepareRemove({
+        ids: between.map(b => b.id)
+    }));
+    ops.push(...(start instanceof Text ? start.prepareEdit({
+        from: start.selection?.start || 0,
+        to: start.text.length
+    }) : paragraph.prepareRemove({ ids: [start.id] })));
+    ops.push(...(end instanceof Text ? end.prepareEdit({
+        from: 0,
+        to: end.selection?.end || 0
+    }) : paragraph.prepareRemove({ ids: [end.id] })));
+
+    if (content?.length) ops.push(...paragraph.prepareInsert({
+        blocks: content,
+        offset: index + 1
+    }));
+
+    paragraph.log('Replacing content in paragraph:', paragraph.index);
+
+    paragraph.codex?.tx(ops).execute();
 
     return data;
 }
@@ -54,16 +71,10 @@ export const paragraphDeleteStrategy = new Strategy(
     /** @param {ParagraphKeydownContext} context */
     (codex, context) => {
         const paragraph = context.block;
-        const data = replace(paragraph);
+        const data = replace(paragraph, context.event.key === 'Enter' ? [{ type: 'linebreak' }] : []);
 
-        if (context.event.key === 'Enter') {
-            if (context.event.shiftKey) {
-                const linebreak = new Linebreak(codex);
-            } else {
-                const next = paragraph.split(data.startOffset);
-                if (next) next.focus(new Focus(0, 0));
-            }
-        }
+        if (context.event.key === 'Enter') paragraph.focus(new Focus(data.startOffset + 1, data.startOffset + 1));
+        else paragraph.focus(new Focus(data.startOffset, data.startOffset));
     }
 ).tag('paragraph').tag('keydown').tag('delete').tag('backspace').tag('enter');
 
@@ -92,12 +103,8 @@ export const paragraphRefocusStrategy = new Strategy(
                 before.focus?.(-1, -1);
             }
         }
-        
     }
-    
 ).tag('refocus').tag('paragraph').tag('linebreak')
-
-
 
 /**
  * @typedef {Object} ParagraphBeforeInputContext
@@ -117,8 +124,11 @@ export const paragraphBeforeInputStrategy = new Strategy(
             if (event.data) {
                 const data = replace(block, [{
                     type: 'text',
-                    text: event.data || '',
+                    init: {
+                        text: event.data || '',
+                    }
                 }])
+                block.focus(new Focus(data.startOffset + event.data.length, data.startOffset + event.data.length));
             }
         }
     }

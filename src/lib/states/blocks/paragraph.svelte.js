@@ -6,7 +6,7 @@ import { MERGEABLE, MergeData } from "../capabilities/merge.capability";
 import { Focus } from "$lib/values/focus.values";
 import { ParagraphBlockInsertion } from "./operations/paragraph.ops";
 import { BlocksInsertion, BlocksRemoval } from "./operations/block.ops";
-import { SMART } from "$lib/utils/operations.utils";
+import { SMART, Operation } from "$lib/utils/operations.utils";
 
 /** 
 * @typedef {(import('./text.svelte').TextObject|import('./linebreak.svelte').LinebreakObject)[]} ParagraphContent
@@ -76,7 +76,6 @@ export class Paragraph extends MegaBlock {
                 if (this.element && this.children) {
                     const styles = this.children.map(child => child instanceof Text ? child.style : null).filter(style => style);
                     if (styles) this.normalize();
-                    
                 }
             })
 
@@ -85,9 +84,9 @@ export class Paragraph extends MegaBlock {
                     const empties = this.children.filter(child => child instanceof Text && !child.text);
                     if (empties.length === 0) return;
                     const ops = [ new BlocksRemoval(this, {ids: empties.map(empty => empty.id)}) ];
-
                     const selection = this.selection;
                     this.codex?.effect(ops);
+                    this.log({selection});
                     if (selection.isInParagraph) this.focus(new Focus(selection.anchorOffset, selection.focusOffset));
                 }
             })
@@ -123,16 +122,9 @@ export class Paragraph extends MegaBlock {
     
     /** @type {Number} */
     end = $derived(this.start + this.length);
-    
-    /** @param {InputEvent} e */
-    oninput = e => {
-        
-    }
 
 
-    /**
-     * @param {InputEvent} e
-     */
+    /** @type {import('$lib/utils/block.utils').BlockListener<InputEvent>} */
     onbeforeinput = e => {
         if (e.inputType === 'insertText' && e.data) {
             if (this.selection.isCollapsed && this.children.find(child => child.selected) instanceof Linebreak) {
@@ -159,20 +151,67 @@ export class Paragraph extends MegaBlock {
         }
     }
     
-    /** @param {KeyboardEvent} e */
-    onkeydown = e => {
+    /** @type {import('$lib/utils/block.utils').BlockListener<KeyboardEvent>} */
+    onkeydown = (e, ascend, data) => {
         if (!this.codex) return;
+        const selected = this.children?.filter(c => c.selected);
+        const first = selected[0];
+        const last = selected[selected.length - 1];
+
+        if (data) {
+            this.log('Received data from ascension:', data);
+            if (data?.action === 'delete') {
+                /** @type {{block: Text, key: String}} */
+                const {block, key = e.key} = data;
+                if (block) {
+                    const selection = this.selection;
+                    this.codex.tx([
+                        ...this.prepareRemove({ ids: [block.id] }),
+                    ]).execute();
+                    const offset = key === 'Backspace' ? selection.anchorOffset - 1 : selection.anchorOffset;
+                    this.log('Deleting block:', block.id);
+                    this.focus(new Focus(offset, offset));
+                    return;
+                }
+            } else if (data?.action === 'split') {
+                /** @type {import("./text.svelte").SplitData} */
+                const {block, editData, newTextData} = data;
+                if (block) {
+                    const blockIndex = this.children.findIndex(c => c === block);
+                    const ops = [];
+                    if (e.shiftKey) {
+                        const offset = this.selection.anchorOffset;
+                        if (editData) ops.push(...block.prepareEdit(editData));
+                        ops.push(...this.prepareInsert({
+                            block: {type: 'linebreak'},
+                            offset: blockIndex + 1
+                        }));
+                        if (newTextData) ops.push(...this.prepareInsert({
+                            block: {type: 'text', init: {
+                                text: newTextData.text,
+                                ...newTextData.styles
+                            }},
+                            offset: blockIndex + 2
+                        }));
+
+                        this.codex.tx(ops).execute();
+                        this.focus(new Focus(offset + 1, offset + 1));
+                    }
+
+
+                }
+
+                this.log('Splitting paragraph at block:', block);
+
+                return;
+            }
+        }
 
         if (e.key === 'Enter') {
-            // const collapsed = this.codex?.selection.collapsed;
-            const selected = this.children?.filter(c => c.selected);
             e.preventDefault();
             if (e.shiftKey) {
                 const ops = [];
-                const first = selected[0];
-                const last = selected[selected.length - 1];
                 const offset = first && first.start + (first instanceof Text ? first.selection?.start : 0);
-
                 if (first === last) {
                     const index = this.children.findIndex(c => c === first);
                     if (first instanceof Text) {
@@ -200,28 +239,6 @@ export class Paragraph extends MegaBlock {
                                 }));
                             }
                         }
-
-                        // const firstEdit = first.prepareEdit(SMART);
-                        // this.log('First edit:', firstEdit);
-                        // if (firstEdit) {
-                        //     ops.push(firstEdit.splitting.edit);
-                        //     ops.push(...this.prepareInsert({
-                        //         block: {
-                        //             type: 'linebreak'
-                        //         },
-                        //         offset: index + 1
-                        //     }));
-                        //     if (firstEdit.splitting.splitted) ops.push(...this.prepareInsert({
-                        //         block: {
-                        //             type: 'text',
-                        //             init: firstEdit.splitting.splitted
-                        //         },
-                        //         offset: index + 2
-                        //     }));
-                        // }
-
-
-
                     } else if (first instanceof Linebreak) {
                         ops.push(...this.prepareInsert({
                             block: {
@@ -232,69 +249,20 @@ export class Paragraph extends MegaBlock {
                     }
                 }
 
-
                 this.codex?.tx(ops).execute().then(r => {
                     this.focus(new Focus(offset + 1, offset + 1));
                 });
-
-            }
+            } else return ascend({
+                block: this,
+                action: 'split',
+                
+            });
         }
 
         if (this.codex?.selection.collapsed) {
             const child = this.children.find(c => c.selected);
-            if (e.key === 'Enter') {
-                this.log('Enter pressed in paragraph:', this.index);
-                e.preventDefault();
-                if (e.shiftKey) {
-                    // const block = this.children.find(c => c.selected);
-                    // const index = this.children.findIndex(c => c === block);
-                    // const offset = block && block.start + (block instanceof Text ? block.selection?.start : 0);
-
-
-                    // const ops = [];
-                    // const newLbOps = this.prepareInsert({
-                    //     block: {
-                    //         type: 'linebreak'
-                    //     },
-                    //     offset: index + 1
-                    // })
-
-
-                    // if (block && block instanceof Text) {
-                    //     const splittingData = block.split(block.selection?.start || -1);
-                    //     if (splittingData) {
-                    //         this.log('Splitting text block:', block, 'at offset:', splittingData);
-                    //         ops.push(splittingData.operation);
-                    //         ops.push(...newLbOps);
-                    //         ops.push(...this.prepareInsert({
-                    //             block: {
-                    //                 type: 'text',
-                    //                 init: splittingData.remainder.data
-                    //             },
-                    //             offset: index + 2
-                    //         }));
-                    //     } else {
-                    //         ops.push(...newLbOps);
-                    //     }
-                    // } else if (block && block instanceof Linebreak) {
-                    //     ops.push(...newLbOps);
-                    // }
-                    // this.log('Operations for Shift + Enter:', ops);
-
-                    // this.codex?.tx(ops).execute().then(r => {
-                    //     this.focus(new Focus(offset + 1, offset + 1));
-                    // });
-
-                } else {
-                    const block = this.children.find(c => c.selected);
-                    if (!block) return;
-                    const beforeBlocks = (block && this.children.filter(child => child.index < block.index)) || [];
-                    const offset = block.start + (block instanceof Text ? (block.selection?.start || 0) : 0);
-                    const p = this.split(offset);
-                    if (p) p.focus(new Focus(0, 0));
-                }
-            } else if (e.key === 'Backspace') {
-                this.log('Backspace pressed in paragraph:', this.index);
+            if (e.key === 'Backspace') {
+                this.log('DEPRECATED - Backspace pressed in paragraph:', this.index);
                 e.preventDefault();
                 const previous = child && this.children.find(c => c.index === child.index - 1);
                 if (previous) {
@@ -306,10 +274,9 @@ export class Paragraph extends MegaBlock {
                     this.log('Merging with previous block:', previous);
                     previous?.merge?.(new MergeData(this.children.slice(0, -1), -1));
                     this.rm();
-                    // previous?.focus?.(new Focus(-1, -1));
                 }
             } else if (e.key === 'Delete') {
-                this.log('Delete pressed in paragraph:', this.index);
+                this.log('DEPRECATED - Delete pressed in paragraph:', this.index);
                 e.preventDefault();
                 const next = child && this.children.find(c => c.index === child.index + 1);
                 if (child instanceof Linebreak && next) {
@@ -482,7 +449,6 @@ export class Paragraph extends MegaBlock {
     /** @param {Focus} f @param {Number} attempts */
     focus = (f, attempts = 0) => requestAnimationFrame(() => {
         this.log('Focusing paragraph:', this.index, 'with focus:', f);
-        console.trace();
         if (this.element) {
             const data = this.getFocusData(f);
             if (data) this.codex?.selection?.setRange(data.startElement, data.startOffset, data.endElement, data.endOffset);
@@ -512,7 +478,7 @@ export class Paragraph extends MegaBlock {
             end = 0;
         }
         
-        let startBlock = this.children.find(child => start >= child.start && start <= child.end);
+        let startBlock = this.children.find(child => start >= child.start && start <= child.end)
         let endBlock = this.children.find(child => end >= child.start && end <= child.end);
         if (start === end && startBlock instanceof Linebreak && start === startBlock.end && this.children.find(child => child.start === start)) startBlock = endBlock = this.children.find(child => child.start === start);
 
@@ -552,6 +518,119 @@ export class Paragraph extends MegaBlock {
                 }
             })
         }
+    }
+
+    /**
+     * Prepares the paragraph for splitting.
+     * @param {{
+     *   start: number,
+     *   end?: number
+     * } | SMART} [splitting=SMART]
+     * @returns {{ops: Operation[], data: {blocks: import('../block.svelte').BlockData[]}}}
+     */
+    prepareSplit = (splitting = SMART) => {
+        if (!this.codex) return { ops: [], data: { blocks: [] } };
+
+        const ops = [];
+        let start, end;
+
+        if (splitting === SMART) {
+            const selection = this.selection;
+            if (!selection.isInParagraph) return { ops: [], data: { blocks: [] } };
+            start = selection.anchorOffset;
+            end = selection.focusOffset;
+        } else {
+            start = splitting.start;
+            end = splitting.end ?? splitting.start;
+        }
+
+        if (start === undefined || start < 0 || start > this.end) return { ops: [], data: { blocks: [] } };
+        if (end < start || end > this.end) end = start;
+
+        const isDelete = start !== end;
+
+        const startBlock = this.children.find(child => start >= child.start && start <= child.end);
+        const endBlock = this.children.find(child => end >= child.start && end <= child.end);
+        
+        if (!startBlock || !endBlock) return { ops: [], data: { blocks: [] } };
+
+        const startIndex = this.children.indexOf(startBlock);
+        const endIndex = this.children.indexOf(endBlock);
+
+        if (isDelete) {
+            const blocksToRemove = this.children.slice(startIndex + 1, endIndex);
+            if (blocksToRemove.length > 0) {
+                ops.push(...this.prepareRemove({ ids: blocksToRemove.map(b => b.id) }));
+            }
+
+            if (startBlock instanceof Text && start > startBlock.start) {
+                ops.push(...startBlock.prepareEdit({
+                    from: start - startBlock.start,
+                    to: startBlock.text.length
+                }));
+            } else if (startBlock instanceof Text && start === startBlock.start) {
+                ops.push(...this.prepareRemove({ ids: [startBlock.id] }));
+            }
+
+            if (endBlock instanceof Text && end < endBlock.end && endBlock !== startBlock) {
+                ops.push(...endBlock.prepareEdit({
+                    from: 0,
+                    to: end - endBlock.start
+                }));
+            }
+        }
+
+        const afterSplitBlocks = this.children.slice(
+            isDelete ? endIndex + (endBlock instanceof Text && end < endBlock.end ? 0 : 1) : startIndex + (startBlock instanceof Text && start > startBlock.start ? 1 : 0)
+        ).filter(child => !child.last);
+
+        const newParagraphBlocks = [];
+
+        if (isDelete && startBlock instanceof Text && endBlock instanceof Text && startBlock !== endBlock) {
+            const startText = startBlock.text.substring(0, start - startBlock.start);
+            const endText = endBlock.text.substring(end - endBlock.start);
+            if (startText || endText) {
+                newParagraphBlocks.push({
+                    type: 'text',
+                    init: {
+                        text: startText + endText,
+                        ...startBlock.style
+                    }
+                });
+            }
+        } else if (startBlock instanceof Text && start < startBlock.end) {
+            const afterText = startBlock.text.substring(start - startBlock.start);
+            if (afterText) {
+                newParagraphBlocks.push({
+                    type: 'text',
+                    init: {
+                        text: afterText,
+                        ...startBlock.style
+                    }
+                });
+            }
+        }
+
+        newParagraphBlocks.push(...afterSplitBlocks.map(block => ({
+            type: block.type,
+            init: block instanceof Text ? {
+                text: block.text,
+                ...block.style
+            } : {}
+        })));
+
+        newParagraphBlocks.push({ type: 'linebreak' });
+
+        if (afterSplitBlocks.length > 0) {
+            ops.push(...this.prepareRemove({ ids: afterSplitBlocks.map(b => b.id) }));
+        }
+
+        return {
+            ops,
+            data: {
+                blocks: newParagraphBlocks
+            }
+        };
     }
 
 

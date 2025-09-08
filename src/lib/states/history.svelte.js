@@ -11,6 +11,5 @@ export class History extends SvelteSet {
 
     /** @type {import('$lib/utils/operations.utils').Transaction?} */
     current = $state(null);
-
     
 }

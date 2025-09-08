@@ -6,18 +6,23 @@ import { executor, SMART, Transaction } from '$lib/utils/operations.utils';
 
 /**
 * @typedef {import('../block.svelte').BlockInit & {
-*   text?: String,
-*   bold?: Boolean,
-*   italic?: Boolean,
-*   underline?: Boolean,
-*   strikethrough?: Boolean,
-*   code?: Boolean
-* }} TextInit
+*   text?: String
+* } & Styles} TextInit
 */
 
 /**
-* @typedef {import('../block.svelte').BlockObject & TextInit & {type: 'text'}} TextObject
+* @typedef {import('../block.svelte').BlockInit & {type: 'text', init: TextInit}} TextObject
 */
+
+/**
+ * @typedef {{
+ *  bold?: Boolean,
+ *  italic?: Boolean,
+ *  underline?: Boolean,
+ *  strikethrough?: Boolean,
+ *  code?: Boolean
+ * }} Styles
+ */
 
 /**
 * @extends {Block}
@@ -118,8 +123,23 @@ export class Text extends Block {
     
     selectionDebug = $derived(`${this.selection ? `Selection: ${this.selection.start} - ${this.selection.end} (${this.selection.length})` : 'No selection'}`);
     
-    /** @param {KeyboardEvent} e @param {Function} ascend */
+    /** @type {import('$lib/utils/block.utils').BlockListener<KeyboardEvent>} */
     onkeydown = (e, ascend) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            return ascend({
+                block: this,
+                action: 'split',
+                editData: this.selection?.start !== this.text.length ? {
+                    from: this.selection?.start,
+                    to: this.text.length
+                } : undefined,
+                newTextData: this.text.slice(this.selection?.end || 0) ? {
+                    text: this.text.slice(this.selection?.end || 0),
+                    styles: this.getStyles()
+                } : undefined
+            })
+        }
         if (e.key !== 'Backspace' && e.key !== 'Delete') return ascend();
         
         e.preventDefault();
@@ -128,12 +148,27 @@ export class Text extends Block {
         
         const isBackspace = e.key === 'Backspace';
         const { start, end } = this.selection;
-        this.log('KEYDOWN', e.key);
         if (this.selection.length > 0) {
+            if (this.selection.length === this.text.length) {
+                return ascend({
+                    action: 'delete',
+                    block: this,
+                });
+            }
             this.edit({ from: start, to: end });
             this.focus(new Focus(start, start));
         } else if ((isBackspace && start === 0) || (!isBackspace && end === this.text.length)) {
-            return ascend();
+            return ascend({
+                action: 'merge',
+                block: this,
+                with: isBackspace ? 'previous' : 'next'
+            });
+        } else if ((isBackspace && start === 1 && this.text.length === 1) || (!isBackspace && start === 0 && this.text.length === 1)) {
+            return ascend({
+                action: 'delete',
+                block: this,
+                key: isBackspace ? 'Backspace' : 'Delete'
+            });
         } else {
             const from = isBackspace ? start - 1 : start;
             const to = isBackspace ? start : start + 1;
@@ -158,7 +193,7 @@ export class Text extends Block {
         focusTarget?.focus(new Focus(focusPosition, focusPosition));
     }
     
-    /** @param {InputEvent} e */
+    /** @type {import('$lib/utils/block.utils').BlockListener<InputEvent>} */
     oninput = e => {
         this.refresh();
     }
@@ -168,13 +203,15 @@ export class Text extends Block {
     }
     
     
-    /** @param {InputEvent} e */
+    /** @type {import('$lib/utils/block.utils').BlockListener<InputEvent>} */
     onbeforeinput = e => {
         if (e.inputType === 'insertText' && e.data) {
-            const {start, end} = this.selection || {};
+            let {start, end} = this.selection || {};
+            this.log('Inserting text:', e.data, 'at', start, 'to', end);
+            start ??= this.text.length;
             this.edit({
                 text: e.data,
-                from: start || this.text.length,
+                from: start,
                 to: end
             });
             e.preventDefault();
@@ -325,12 +362,10 @@ export class Text extends Block {
         return {
             ...super.toJSON(),
             type: 'text',
-            text: this.text,
-            ...(this.bold ? { bold: this.bold } : {}),
-            ...(this.italic ? { italic: this.italic } : {}),
-            ...(this.underline ? { underline: this.underline } : {}),
-            ...(this.strikethrough ? { strikethrough: this.strikethrough } : {}),
-            ...(this.code ? { code: this.code } : {}),
+            init: {
+                text: this.text,
+                ...this.getStyles()
+            }
         };
     }
     
@@ -499,8 +534,10 @@ export class Text extends Block {
 
     /** @param {EditData} data  */
     applyEdit = data => {
+        
         let {text = "", from, to} = data;
         to = to ?? from;
+        this.log('APPLY EDIT', { from, to, text }, 'TO', this.text);
         this.text = this.text.slice(0, from) + text + this.text.slice(to);
         this.resync();
         this.refresh();
@@ -515,3 +552,23 @@ export class Text extends Block {
 *   to?: number
 * }} EditData
 */
+
+
+/**
+ * @typedef {{
+ *  block: Text,
+ *  action: 'split',
+ *  editData: {
+ *    from: number,
+ *    to: number
+ *  },
+ *  newTextData: {
+ *    text: string,
+ *    styles: Styles
+ *  } | undefined
+ * }} SplitData
+ */
+
+/**
+ * @typedef {SplitData} TextActionsData
+ */

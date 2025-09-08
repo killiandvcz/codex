@@ -59,7 +59,7 @@ export class Transaction {
         const beforeSelection = this.codex?.selection?.range;
 
         try {
-            for (const op of this.operations) await Promise.resolve(op.execute(this));
+            for (const op of this.operations) op.execute(this);
             await tick().then(() => this.commit());
             return this.results;
         } catch (error) {
