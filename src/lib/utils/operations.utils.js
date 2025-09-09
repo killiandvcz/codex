@@ -7,6 +7,8 @@ export class Operation {
         this.name = name;
         this.data = data;
         this.undo = undo;
+        /** @type {Object<any, any>} */
+        this.metadata = {};
     }
 
     /**
@@ -61,6 +63,7 @@ export class Transaction {
         try {
             for (const op of this.operations) op.execute(this);
             await tick().then(() => this.commit());
+            console.log("Transaction executed with results:", this.results);
             return this.results;
         } catch (error) {
             for (let i = this.executed.length - 1; i >= 0; i--) {
@@ -120,3 +123,4 @@ export const executor = (block, callback) => (data) => {
 
 
 export const SMART = Symbol('smart');
+export const ITSELF = Symbol('itself');

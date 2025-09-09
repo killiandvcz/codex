@@ -4,8 +4,8 @@
 * @property {string[]} params - Parameters for the operation, such as coordinates or block IDs.
 * @property {string} handler - The name of the handler function to execute for this operation.
 */
-
 import { BlocksInsertion, BlocksRemoval, BlocksReplacement } from './blocks/operations/block.ops';
+import { Codex } from './codex.svelte';
 
 /**
  * @typedef {new (...args: any[]) => Block} BlockConstructor
@@ -71,7 +71,7 @@ export class Block {
 
         /**
          * A set of preparators available on the block.
-         * @type {Map<string, Function>}
+         * @type {Map<string, (function(...any): Operation[])>}
          */
         this.preparators = new Map();
 
@@ -220,11 +220,16 @@ export class Block {
      * Prepares data for a specific operation.
      * @param {String} name
      * @param {Object} data
+     * @param {Object} [metadata]
+     * @returns {import('$lib/utils/operations.utils').Operation[]}
      */
-    prepare = (name, data) => {
+    prepare = (name, data, metadata) => {
         const preparator = this.preparators.get(name);
         if (!preparator) throw new Error(`No preparator found for "${name}" in block "${this.type}".`);
-        return preparator(data);
+        return preparator(data).map(o => {
+            o.metadata = {...o.metadata, ...metadata};
+            return o;
+        });
     }
 
 
@@ -248,6 +253,8 @@ export class Block {
     log = (...args) => {
         const prefix = `${this.type}${this.index < 0 ? '-⌀' : `-${this.index}`}`.toUpperCase();
         console.log(prefix, ...args);
+        // console.trace();
+   
     }
 
     toJSON() {
@@ -257,10 +264,28 @@ export class Block {
         };
     }
 
+    toObject() {
+        return {
+            type: this.type,
+        };
+    }
+
+    toInit() {
+        return {
+            type: this.type,
+        }
+    }
+
     /** @type {BlockManifest} */
     get manifest() {
         return this.constructor.manifest;
     }
+
+
+    /** @returns {import('$lib/utils/operations.utils').Operation[]} */
+    prepareDestroy = () => this.parent ? this.parent.prepareRemove({ ids: [this.id] }) : [];
+
+    destroy = () => this.codex?.tx(this.prepareDestroy()).execute()
 }
 
 /**
@@ -275,9 +300,9 @@ export class MegaBlock extends Block {
         blocks: {}
     };
 
-    /** @param {import('./codex.svelte').Codex?} codex*/
-    constructor(codex) {
-        super(codex);
+    /** @param {import('./codex.svelte').Codex?} codex @param {BlockInit} init*/
+    constructor(codex, init = {}) {
+        super(codex, init);
 
         this.trine('insert', this.prepareInsert, this.insert, this.applyInsert);
         this.trine('remove', this.prepareRemove, this.remove, this.applyRemove);
@@ -437,7 +462,8 @@ export class MegaBlock extends Block {
         const blocks = data.blocks.map(({type, init}) => {
             const B = this.blocks[type];
             if (!B) throw new Error(`Block type "${type}" not found in mega block.`);
-            return new B(this.codex, init);
+            this.log('Creating block of type:', type, 'with init:', init);
+            return new B(this instanceof Codex ? this : this.codex, init);
         }).filter(b => b instanceof Block);
 
         this.children = [

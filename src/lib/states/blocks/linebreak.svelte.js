@@ -6,6 +6,8 @@ import { Text } from "./text.svelte";
  * @typedef {import('../block.svelte').BlockInit & {
  *  type: 'linebreak'
  * }} LinebreakObject
+ * 
+ * @typedef {LinebreakObject} LinebreakInit
  */
 
 

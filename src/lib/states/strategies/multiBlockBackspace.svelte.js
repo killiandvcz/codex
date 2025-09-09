@@ -29,7 +29,7 @@ export const multiBlockBackspaceStrategy = new Strategy(
             }
         });
 
-        codex.children.filter(c => c.selected).forEach(c => c.call('delete', deletion));
+        // codex.children.filter(c => c.selected).forEach(c => c.call('delete', deletion));
 
 
         

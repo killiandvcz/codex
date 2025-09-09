@@ -122,13 +122,15 @@ export const paragraphBeforeInputStrategy = new Strategy(
             block.log('Before input event:', event);
 
             if (event.data) {
+                const selection = block.selection;
                 const data = replace(block, [{
                     type: 'text',
                     init: {
                         text: event.data || '',
                     }
                 }])
-                block.focus(new Focus(data.startOffset + event.data.length, data.startOffset + event.data.length));
+                block.log('focus at:', selection.startOffset + event.data.length);
+                block.focus(new Focus(selection.startOffset + event.data.length, selection.startOffset + event.data.length));
             }
         }
     }

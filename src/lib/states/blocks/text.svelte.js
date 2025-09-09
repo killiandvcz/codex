@@ -42,6 +42,7 @@ export class Text extends Block {
             metadata: init.metadata || {}
         });
     
+        this.log('Creating text block with init:', init);
         this.text = init.text || '';
         this.bold = init.bold || false;
         this.italic = init.italic || false;
@@ -159,9 +160,9 @@ export class Text extends Block {
             this.focus(new Focus(start, start));
         } else if ((isBackspace && start === 0) || (!isBackspace && end === this.text.length)) {
             return ascend({
-                action: 'merge',
+                action: 'nibble',
                 block: this,
-                with: isBackspace ? 'previous' : 'next'
+                what: isBackspace ? 'previous' : 'next'
             });
         } else if ((isBackspace && start === 1 && this.text.length === 1) || (!isBackspace && start === 0 && this.text.length === 1)) {
             return ascend({
@@ -368,6 +369,24 @@ export class Text extends Block {
             }
         };
     }
+
+    toObject() {
+        return {
+            type: 'text',
+            text: this.text,
+            ...this.getStyles()
+        }
+    }
+
+    toInit() {
+        return {
+            ...super.toInit(),
+            init: {
+                text: this.text,
+                ...this.getStyles()
+            }
+        }
+    }
     
     toMarkdown() {
         
@@ -497,12 +516,16 @@ export class Text extends Block {
     * @param {{
     *   from: number,
     *   to: number
-    * }|import('$lib/utils/operations.utils').SMART} data
+    * }|import('$lib/utils/operations.utils').SMART} [data=SMART]
     */
     getSplittingData = (data) => {
+        if (!data) data = SMART;
         const { from, to } = this.normalizeEditParams(data);
         
         return {
+            from,
+            to,
+            limit: this.text.length,
             before: from > 0 ? {
                 text: this.text.slice(0, from),
                 ...this.getStyles()
@@ -520,8 +543,10 @@ export class Text extends Block {
         };
     }
 
-    /** @param {EditData|import('$lib/utils/operations.utils').SMART} data  */
+    /** @param {EditData|import('$lib/utils/operations.utils').SMART} [data=SMART]  */
     prepareEdit = data => {
+        if (!this.codex) return [];
+        if (!data) data = SMART;
         const params = this.normalizeEditParams(data);
         
         return [
@@ -534,7 +559,6 @@ export class Text extends Block {
 
     /** @param {EditData} data  */
     applyEdit = data => {
-        
         let {text = "", from, to} = data;
         to = to ?? from;
         this.log('APPLY EDIT', { from, to, text }, 'TO', this.text);

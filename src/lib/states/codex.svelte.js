@@ -49,16 +49,21 @@ export const onInit = codex => {
 }
 
 export class Codex extends MegaBlock {
+
+    static manifest = {
+        type: 'codex',
+        blocks: {
+            paragraph: Paragraph
+        },
+        strategies: initialStrategies
+    }
+
     /**
     * Creates an instance of Codex.
     * @param {CodexInit} [init] - Initial configuration for the codex.
     */
     constructor(init = {}) {
-        super(null, {
-            type: 'codex',
-            blocks: [ Paragraph ],
-            strategies: init.strategies || initialStrategies
-        });
+        super(null);
         
         /** @type {Object<string, import('svelte').Component>} */
         this.components = init.components || initialComponents;
@@ -171,9 +176,7 @@ export class Codex extends MegaBlock {
     oninput = e => this.handleEvent(e, 'oninput', 'input');
     
     /** @param {KeyboardEvent} e */
-    onkeydown = e => this.handleEvent(e, 'onkeydown', 'keydown', (data) => {
-        this.log("Ascended data to codex on keydown:", data);
-    });
+    onkeydown = e => this.handleEvent(e, 'onkeydown', 'keydown');
 
     /** @param {import('$lib/utils/operations.utils').Operation[]} ops */
     tx = (ops) => new Transaction(ops, this)

@@ -1,4 +1,4 @@
-import { MegaBlock } from "../block.svelte";
+import { Block, MegaBlock } from "../block.svelte";
 import { Linebreak } from "./linebreak.svelte";
 import { Text } from "./text.svelte";
 import { paragraphStrategies } from "./strategies/paragraph.strategies";
@@ -7,6 +7,7 @@ import { Focus } from "$lib/values/focus.values";
 import { ParagraphBlockInsertion } from "./operations/paragraph.ops";
 import { BlocksInsertion, BlocksRemoval } from "./operations/block.ops";
 import { SMART, Operation } from "$lib/utils/operations.utils";
+import { text } from "@sveltejs/kit";
 
 /** 
 * @typedef {(import('./text.svelte').TextObject|import('./linebreak.svelte').LinebreakObject)[]} ParagraphContent
@@ -23,7 +24,12 @@ import { SMART, Operation } from "$lib/utils/operations.utils";
 /**
  * @typedef {import("../block.svelte").BlockInit & {
  *  children?: ParagraphContent
- * }}
+ * }} ParagraphInit
+ */
+
+/**
+ * @typedef {import('./text.svelte').TextInit|import('./linebreak.svelte').LinebreakInit} ParagraphChildInit
+ * @typedef {ParagraphChildInit[]} ParagraphChildrenInit
  */
 
 
@@ -44,12 +50,24 @@ export class Paragraph extends MegaBlock {
 
     /**
     * @param {import('../codex.svelte').Codex} codex
+    * @param {ParagraphInit} [init]
     */
-    constructor(codex) {
-        super(codex);
+    constructor(codex, init = {}) {
+        super(codex, {
+            id: init.id,
+            metadata: init.metadata,
+        });
 
-        this.method('delete', deletion => this.handleDelete(deletion));
-        // this.method('insert', insertion => this.handleInsertBlocks(insertion));
+        if (init.children?.length) {
+            this.children = init.children.map((b) => {
+                const { type, init = {} } = b;
+                this.log('Creating child block of type:', b);
+
+                const B = this.blocks[type];
+                if (!B) throw new Error(`Block type "${type}" not found in paragraph.`);
+                return new B(this.codex, init);
+            }).filter(b => b instanceof Linebreak || b instanceof Text);
+        }
 
         $effect.root(() => {
             $effect(() => {
@@ -87,7 +105,7 @@ export class Paragraph extends MegaBlock {
                     const selection = this.selection;
                     this.codex?.effect(ops);
                     this.log({selection});
-                    if (selection.isInParagraph) this.focus(new Focus(selection.anchorOffset, selection.focusOffset));
+                    if (selection.isInParagraph) this.focus(new Focus(selection.startOffset, selection.endOffset));
                 }
             })
         });
@@ -104,13 +122,12 @@ export class Paragraph extends MegaBlock {
         const lastOffset = lastChild && lastChild.start + (lastChild instanceof Text ? lastChild.selection?.end : 1);
 
         return {
-            anchorOffset: firstOffset,
-            focusOffset: lastOffset,
+            startOffset: firstOffset,
+            endOffset: lastOffset,
             isCollapsed: this.codex?.selection.collapsed,
             isInParagraph: !!firstChild
         };
     });
-    
     
     /** @type {Number} */
     length = $derived(this.children.reduce((acc, child) => {
@@ -127,6 +144,7 @@ export class Paragraph extends MegaBlock {
     /** @type {import('$lib/utils/block.utils').BlockListener<InputEvent>} */
     onbeforeinput = e => {
         if (e.inputType === 'insertText' && e.data) {
+            const selection = this.selection;
             if (this.selection.isCollapsed && this.children.find(child => child.selected) instanceof Linebreak) {
                 const selected = this.children.find(c => c.selected);
                 const index = this.children.findIndex(c => c === selected);
@@ -144,8 +162,9 @@ export class Paragraph extends MegaBlock {
                     })
                 ]);
                 tx?.execute().then(r => {
-                    const blocks = r?.[0]?.result;
-                    if (blocks) blocks.at(-1)?.focus?.(new Focus(-1, -1));
+                    console.log('Insertion result:', r);
+                    this.focus(new Focus(selection.startOffset + 1, selection.startOffset + 1));
+
                 });
             }
         }
@@ -157,18 +176,57 @@ export class Paragraph extends MegaBlock {
         const selected = this.children?.filter(c => c.selected);
         const first = selected[0];
         const last = selected[selected.length - 1];
+        const selection = this.selection;
+
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            this.codex?.tx(this.prepareSplit()).execute().then(ops => {
+                this.log(ops);
+                const op = ops?.find(o => o.operation.metadata?.key === 'new-paragraph');
+                const newParagraph = op?.result?.[0];
+                if (newParagraph) {
+                    newParagraph.focus(new Focus(0, 0));
+                } else {
+                    console.error('No new paragraph found in operations:', ops);
+                }
+            })
+            return;
+        }
+
+        if (e.key === 'Backspace' && selection.isCollapsed && selection.startOffset === 0) {
+            e.preventDefault();
+
+            /** @type {Paragraph|null} */
+            const previousMergeable = this.codex.recursive.findLast(b => b.capabilities.has(MERGEABLE) && b.index < this.index);
+            this.log('Merging with previous mergeable block:', previousMergeable);
+
+            const obj = this.toInit();
+            this.log('Current paragraph init for merge:', obj);
+            if (previousMergeable && previousMergeable !== this) {
+                previousMergeable.merge({
+                    source: this,
+                    children: obj.init.children || []
+                })?.then(() => {
+                    console.log('Merged paragraph into previous block:', previousMergeable);
+                })
+            }
+
+            
+
+            return;
+        }
 
         if (data) {
-            this.log('Received data from ascension:', data);
             if (data?.action === 'delete') {
                 /** @type {{block: Text, key: String}} */
                 const {block, key = e.key} = data;
                 if (block) {
                     const selection = this.selection;
+                    e.preventDefault();
                     this.codex.tx([
                         ...this.prepareRemove({ ids: [block.id] }),
                     ]).execute();
-                    const offset = key === 'Backspace' ? selection.anchorOffset - 1 : selection.anchorOffset;
+                    const offset = key === 'Backspace' ? selection.startOffset - 1 : selection.startOffset;
                     this.log('Deleting block:', block.id);
                     this.focus(new Focus(offset, offset));
                     return;
@@ -180,7 +238,7 @@ export class Paragraph extends MegaBlock {
                     const blockIndex = this.children.findIndex(c => c === block);
                     const ops = [];
                     if (e.shiftKey) {
-                        const offset = this.selection.anchorOffset;
+                        const offset = this.selection.startOffset;
                         if (editData) ops.push(...block.prepareEdit(editData));
                         ops.push(...this.prepareInsert({
                             block: {type: 'linebreak'},
@@ -193,17 +251,30 @@ export class Paragraph extends MegaBlock {
                             }},
                             offset: blockIndex + 2
                         }));
-
                         this.codex.tx(ops).execute();
                         this.focus(new Focus(offset + 1, offset + 1));
                     }
-
+                }
+                return;
+            } else if (data?.action === 'nibble') {
+                /** @type {{block: Text, what: 'previous'|'next'}} */
+                const {block, what} = data;
+                if (block) {
+                    const offset = what === 'previous' ? block.start - 1 : block.end;
+                    const blockIndex = this.children.findIndex(c => c === block);
+                    const target = what === 'previous' ? this.children[blockIndex - 1] : this.children[blockIndex + 1];
+                    const ops = [];
+                    if (!target) return;
+                    if (target instanceof Linebreak) ops.push(...this.prepareRemove({ ids: [target.id] }));
+                    else if (target instanceof Text) ops.push(...target.prepareEdit({
+                        from: -2,
+                        to: -1
+                    }));
+                    this.codex.tx(ops).execute();
+                    this.focus(new Focus(offset, offset));
 
                 }
 
-                this.log('Splitting paragraph at block:', block);
-
-                return;
             }
         }
 
@@ -252,51 +323,6 @@ export class Paragraph extends MegaBlock {
                 this.codex?.tx(ops).execute().then(r => {
                     this.focus(new Focus(offset + 1, offset + 1));
                 });
-            } else return ascend({
-                block: this,
-                action: 'split',
-                
-            });
-        }
-
-        if (this.codex?.selection.collapsed) {
-            const child = this.children.find(c => c.selected);
-            if (e.key === 'Backspace') {
-                this.log('DEPRECATED - Backspace pressed in paragraph:', this.index);
-                e.preventDefault();
-                const previous = child && this.children.find(c => c.index === child.index - 1);
-                if (previous) {
-                    const offset = (previous instanceof Text ? previous.start - previous.selection?.start : previous.start);
-                    previous.delete(-2, -1);
-                    this.focus(new Focus(offset, offset));
-                } else {
-                    const previous = this.parent?.children.findLast(c => c.index < this.index && c.capabilities.has(MERGEABLE));
-                    this.log('Merging with previous block:', previous);
-                    previous?.merge?.(new MergeData(this.children.slice(0, -1), -1));
-                    this.rm();
-                }
-            } else if (e.key === 'Delete') {
-                this.log('DEPRECATED - Delete pressed in paragraph:', this.index);
-                e.preventDefault();
-                const next = child && this.children.find(c => c.index === child.index + 1);
-                if (child instanceof Linebreak && next) {
-                    child.delete();
-                    next.focus?.(new Focus(0, 0));
-                } else if ((child instanceof Linebreak && !next) || (child instanceof Text && child === this.children.at(-2) && next instanceof Linebreak)) {
-                    this.log('Try merging next block with this');
-                    const nextMergeable = this.parent?.children.find(c => c.index > this.index && c.capabilities.has(MERGEABLE));
-                    if (nextMergeable) {
-                        const offset = this.end;
-                        this.merge(new MergeData(nextMergeable.children.slice(0, -1), -1));
-                        nextMergeable.rm();
-                        this.focus(new Focus(offset -1, offset -1));
-                    }
-                } else if (child instanceof Text && next && child.selection?.end === child.text.length) {
-                    const offset = child.selection.start;
-                    next.delete(0, 1);
-                    this.log('Deleting character from next text block:', next);
-                    child.focus?.(new Focus(offset, offset));
-                }
             }
         }
     }
@@ -304,146 +330,39 @@ export class Paragraph extends MegaBlock {
     normalize = () => {
         if (!this.codex) return;
 
-        /** @param {Number} blockIndex */
-        const merge = (blockIndex) => {
-            if (blockIndex >= this.children.length - 1) return;
-            const current = this.children[blockIndex];
-            const next = this.children[blockIndex + 1];
-            if (current instanceof Text && next instanceof Text && current.style === next.style && !current.link && !next.link) {
-                this.log(`Merging text blocks at index ${blockIndex} and ${blockIndex + 1}`);
-                current.merge(next);
-                this.children = this.children.filter(c => c !== next);
-                merge(blockIndex);
-            } else {
-                merge(blockIndex + 1);
-            }
+        /** @type {Number[][]} */
+        const groups = findConsecutiveTextGroupsByStyle(this.children);
+
+        if (groups.length) {
+            this.log('Found groups of consecutive texts with same style:', groups);
+            /** @type {Operation[]} */
+            const ops = [];
+            groups.forEach(group => {
+                const texts = group.map(i => this.children[i]).filter(c => c instanceof Text);
+                if (texts.length < 2) return;
+                const first = texts[0];
+                const merging = texts.slice(1).reduce((acc, t) => acc + t.text, "");
+                ops.push(...first.prepareEdit({
+                    from: -1,
+                    to: -1,
+                    text: merging
+                }));
+                ops.push(...this.prepareRemove({ ids: texts.slice(1).map(t => t.id) }));
+            });
+            const selection = this.selection;
+            this.codex.effect(ops);
+
+            this.log({selection});
+            // if (selection.isInParagraph) this.focus(new Focus(selection.startOffset, selection.endOffset));
         }
 
         if (this.children.length === 0) {
             this.children = [new Linebreak(this.codex)];
-        } else {
-            merge(0);
         }
 
         if (!(this.children.at(-1) instanceof Linebreak)) {
             this.children.push(new Linebreak(this.codex));
         }
-    }
-    
-    /** @param {Number} offset */
-    truncate = (offset) => {
-        
-    }
-    
-    /** @param {Number} offset */
-    split = offset => {
-        if (!this.codex) return;
-
-        const splittingBlock = this.children.find(child => offset >= child.start && offset <= child.end);
-        if (!splittingBlock) return;
-
-        const afterBlocks = (splittingBlock && this.children.filter(child => child.index > splittingBlock.index && !child.last)) || [];
-
-        const startBlock = splittingBlock instanceof Text ? splittingBlock.$split(offset - splittingBlock.start) : null;
-        
-        this.children = this.children.filter(child => !(afterBlocks.includes(child)));
-        
-        const newParagraph = new Paragraph(this.codex);
-        newParagraph.children = [
-            ...(startBlock ? [startBlock] : []),
-            ...afterBlocks,
-            new Linebreak(this.codex),
-        ];
-        
-        const parentIndex = this.codex.children.indexOf(this);
-        this.codex.children = [
-            ...this.codex.children.slice(0, parentIndex + 1),
-            newParagraph,
-            ...this.codex.children.slice(parentIndex + 1),
-        ];
-        
-        return newParagraph;
-    }
-    
-    /**
-    * @param {(Text | Linebreak)[]} children
-    * @param {Number} [at]
-    * @param {'blocks'|'global'} [scope='blocks']
-    */
-    join = (children, at, scope = "blocks") => {
-        if (children.length === 0) return;
-        if (children.some(child => !(child instanceof Text || child instanceof Linebreak))) throw new Error(`Invalid children types for joining in paragraph ${this.index}. Expected Text or Linebreak.`);
-
-        if (scope === 'blocks') {
-            at ??= this.children.length;
-            if (at < 0) at = this.children.length + at + 1;
-            if (at < 0 || at > this.children.length) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
-
-            this.log(`Joining ${children.length} children at index ${at} in paragraph ${this.index}.`);
-            this.children = [
-                ...this.children.slice(0, at),
-                ...children,
-                ...this.children.slice(at),
-            ];
-            this.log('After: ', this.children);
-        } else if (scope === 'global') {
-            this.log(`Joining ${children.length} children globally at index ${at} in paragraph ${this.index}.`);
-            at ??= (this.children.at(-1)?.end || 0);
-            if (at < 0) at = this.children.at(-1)?.end + at + 1;
-            if (at < 0 || at > this.children.at(-1)?.end) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
-
-            if (!this.children.length && this.codex) {
-                this.children.push(new Linebreak(this.codex));
-                return;
-            }
-
-            const child = this.children.find(c => c.start <= at && c.end >= at);
-            if (!child) throw new Error(`Invalid index ${at} for joining children in paragraph ${this.index}.`);
-            this.log(`Joining children at index ${at} in paragraph ${this.index}. Found child:`, child);
-            if (child instanceof Text) child.$split(at - child.start);
-            const childIndex = this.children.indexOf(child);
-            if (childIndex === -1) throw new Error(`Invalid child index ${childIndex} for joining children in paragraph ${this.index}.`);
-
-            this.children = at === 0 ? [
-                ...children,
-                ...this.children
-            ] : [
-                ...this.children.slice(0, childIndex + 1),
-                ...children,
-                ...this.children.slice(childIndex + 1),
-            ];
-        }
-    }
-
-    /** @param {import('../capabilities/merge.capability').MergeData} data */
-    merge = data => {
-        /** @type {(Text | Linebreak)[]} */
-        const blocks = data.blocks.filter(block => block instanceof Text || block instanceof Linebreak);
-        this.log('Merging blocks:', blocks);
-        const offset = this.end;
-        this.join(blocks, data.at - 1);
-        this.log('After merge:', this.children);
-        this.focus(new Focus(offset - 1, offset - 1));
-    }
-
-    /**
-    * Generates a new blocks from the given content.
-    * @param {ParagraphContent} content 
-    * @param {Number} at 
-    * @param {'blocks'|'global'} [scope='blocks']
-    */
-    generate = (content, at, scope = 'blocks') => {
-        this.log('Generating blocks from content:', content, 'at index:', at);
-        if (!this.codex) return;
-        const blocks = [];
-        for (const item of content) {
-            if (item.type === 'linebreak') {
-                blocks.push(new Linebreak(this.codex));
-            } else if (item.type === 'text') {
-                blocks.push(new Text(this.codex, item));
-            }
-        }
-        this.join(blocks, at, scope);
     }
 
     /** @param {Focus} f @param {Number} attempts */
@@ -500,155 +419,167 @@ export class Paragraph extends MegaBlock {
         }
     }
 
+    debug = $derived(`${this.selection.startOffset} - ${this.selection.endOffset} [length: ${this.length}]`);
 
-    debug = $derived(`${this.selection.anchorOffset} - ${this.selection.focusOffset} [length: ${this.length}]`);
 
     /**
-     * Handles the deletion of the paragraph.
-     * @param {import('../../values/codex.values').Deletion} deletion 
-    */
-    handleDelete = deletion => {
-        this.log('Handling deletion:', deletion);
-        if (deletion.mode === 'auto') {
-            this.children.filter(c => c.selected).forEach(child => {
-                if (child instanceof Text) {
-                    // child.d
-                } else if (child instanceof Linebreak) {
-                    child.rm();
-                }
-            })
-        }
+     * Merges the paragraph with the given data.
+     * @param {{
+     *  children: ParagraphChildrenInit,
+     *  source: Block|null
+     * }} data 
+     * @returns 
+     */
+    merge = data => {
+        if (!this.codex) return;
+        const ops = [];
+        const { source, children } = data;
+
+        this.log('Merging into paragraph:', this.index, 'with data:', data);
+        if (children?.length) {
+            ops.push(...this.prepareInsert({
+                blocks: children,
+                offset: -2
+            }));
+        } 
+
+        if (source) ops.push(...source.prepareDestroy());
+        const offset = (this.end - this.start) - 1;
+        this.log('Focusing at offset after merge:', offset);
+        return this.codex.tx(ops).execute().then(() => {
+            this.focus(new Focus(offset, offset));
+        })
     }
 
+
+
     /**
-     * Prepares the paragraph for splitting.
-     * @param {{
-     *   start: number,
-     *   end?: number
-     * } | SMART} [splitting=SMART]
-     * @returns {{ops: Operation[], data: {blocks: import('../block.svelte').BlockData[]}}}
+     * Splits the paragraph at the given offsets.
+     * @param {{start?: number, end?: number, offset?: number} | SMART} [data=SMART]
+     * @return {Operation[]}
      */
-    prepareSplit = (splitting = SMART) => {
-        if (!this.codex) return { ops: [], data: { blocks: [] } };
+    prepareSplit = data => {
+        if (!this.codex) return [];
+        if (!data) data = SMART;
+        if (data === SMART) (data = { start: this.selection.startOffset || 0, end: this.selection.endOffset || this.selection.startOffset || 0 });
+        else if (data?.offset && (data.start || data.end)) throw new Error('Cannot specify both offset and start/end for split operation.');
+        else if (data?.offset) data = { start: data.offset, end: data.offset };
+        else if (!data?.start && !data?.end) data = { start: 0, end: 0 };
+        const { start = 0, end = 0 } = data;
 
-        const ops = [];
-        let start, end;
-
-        if (splitting === SMART) {
-            const selection = this.selection;
-            if (!selection.isInParagraph) return { ops: [], data: { blocks: [] } };
-            start = selection.anchorOffset;
-            end = selection.focusOffset;
-        } else {
-            start = splitting.start;
-            end = splitting.end ?? splitting.start;
-        }
-
-        if (start === undefined || start < 0 || start > this.end) return { ops: [], data: { blocks: [] } };
-        if (end < start || end > this.end) end = start;
-
-        const isDelete = start !== end;
 
         const startBlock = this.children.find(child => start >= child.start && start <= child.end);
         const endBlock = this.children.find(child => end >= child.start && end <= child.end);
+        const middleBlocks = this.children.slice(this.children.indexOf(startBlock) + 1, this.children.indexOf(endBlock));
+        const afterBlocks = this.children.slice(this.children.indexOf(endBlock) + 1).filter(b => !(b instanceof Linebreak && this.children.at(-1) === b))
+        this.log('Preparing split of paragraph:', this.index, 'at', {start, end}, 'with blocks:', startBlock, middleBlocks, endBlock, afterBlocks);
+
+        const ops = [];
+
+        const startSplittingData = startBlock instanceof Text ? startBlock.getSplittingData() : null;
+        const endSplittingData = endBlock instanceof Text ? endBlock.getSplittingData() : null;
+        this.log('Splitting data:', {startSplittingData, endSplittingData});
+        if (startBlock instanceof Text) ops.push(...startBlock.prepareEdit({
+            from: startSplittingData?.from || 0,
+            to: startBlock.text.length
+        }))
+        if (afterBlocks.length) ops.push(...this.prepareRemove({ ids: afterBlocks.map(b => b.id) }));
+
+        // /** @type {ParagraphInit} */
+        const newParagraphInit = {
+            type: 'paragraph',
+            init: {
+                children: [
+                    ...(endSplittingData?.after ? [{type: 'text', init: endSplittingData.after}] : []),
+                    ...(afterBlocks.length ? afterBlocks.map(c => c.toInit?.()) : []),
+                ]
+            }   
+        }
+
+        const insertion = this.parent?.prepare('insert', {
+            block: newParagraphInit,
+            offset: this.index + 1
+        }, {key: 'new-paragraph'});
+        this.log('Insertion op for new paragraph:', insertion);
+        if (insertion) ops.push(...insertion);
+
+        this.log('New paragraph init:', newParagraphInit);
+
         
-        if (!startBlock || !endBlock) return { ops: [], data: { blocks: [] } };
 
-        const startIndex = this.children.indexOf(startBlock);
-        const endIndex = this.children.indexOf(endBlock);
+        this.log('Operations for split:', ops);
+        return ops;
+    }
 
-        if (isDelete) {
-            const blocksToRemove = this.children.slice(startIndex + 1, endIndex);
-            if (blocksToRemove.length > 0) {
-                ops.push(...this.prepareRemove({ ids: blocksToRemove.map(b => b.id) }));
-            }
 
-            if (startBlock instanceof Text && start > startBlock.start) {
-                ops.push(...startBlock.prepareEdit({
-                    from: start - startBlock.start,
-                    to: startBlock.text.length
-                }));
-            } else if (startBlock instanceof Text && start === startBlock.start) {
-                ops.push(...this.prepareRemove({ ids: [startBlock.id] }));
-            }
-
-            if (endBlock instanceof Text && end < endBlock.end && endBlock !== startBlock) {
-                ops.push(...endBlock.prepareEdit({
-                    from: 0,
-                    to: end - endBlock.start
-                }));
-            }
-        }
-
-        const afterSplitBlocks = this.children.slice(
-            isDelete ? endIndex + (endBlock instanceof Text && end < endBlock.end ? 0 : 1) : startIndex + (startBlock instanceof Text && start > startBlock.start ? 1 : 0)
-        ).filter(child => !child.last);
-
-        const newParagraphBlocks = [];
-
-        if (isDelete && startBlock instanceof Text && endBlock instanceof Text && startBlock !== endBlock) {
-            const startText = startBlock.text.substring(0, start - startBlock.start);
-            const endText = endBlock.text.substring(end - endBlock.start);
-            if (startText || endText) {
-                newParagraphBlocks.push({
-                    type: 'text',
-                    init: {
-                        text: startText + endText,
-                        ...startBlock.style
-                    }
-                });
-            }
-        } else if (startBlock instanceof Text && start < startBlock.end) {
-            const afterText = startBlock.text.substring(start - startBlock.start);
-            if (afterText) {
-                newParagraphBlocks.push({
-                    type: 'text',
-                    init: {
-                        text: afterText,
-                        ...startBlock.style
-                    }
-                });
-            }
-        }
-
-        newParagraphBlocks.push(...afterSplitBlocks.map(block => ({
-            type: block.type,
-            init: block instanceof Text ? {
-                text: block.text,
-                ...block.style
-            } : {}
-        })));
-
-        newParagraphBlocks.push({ type: 'linebreak' });
-
-        if (afterSplitBlocks.length > 0) {
-            ops.push(...this.prepareRemove({ ids: afterSplitBlocks.map(b => b.id) }));
-        }
-
+    toObject() {
         return {
-            ops,
-            data: {
-                blocks: newParagraphBlocks
-            }
-        };
+            ...super.toObject(),
+            children: this.children.map(child => child.toObject()),
+        }
     }
 
-
-
-    /**
-     * Handles the insertion of a new block.
-     * @param {import('./operations/paragraph.ops').ParagraphBlockInsertionData} data
-     */
-    handleInsertBlocks = data => {
-        const blocks = data.blocks.map(({ type, init }) => {
-            const B = this.blocks[type];
-            if (B && this.codex) {
-                const block = new B(this.codex, init);
-                return block;
+    toInit() {
+        return {
+            ...super.toInit(),
+            init: {
+                children: this.children.filter(child => !(child instanceof Linebreak && this.children.at(-1) === child)).map(child => child.toInit()),
             }
-        }).filter(b => !!b);
-        this.join(blocks, data.offset, 'global');
-
-        return blocks;
+        }
     }
+}
+
+
+/**
+ * Finds consecutive text elements with the same style.
+ * @param {(Text|Linebreak)[]} elements 
+ * @returns {Number[][]} - Array of arrays, each containing the indices of consecutive Text elements with the same style.
+ */
+function findConsecutiveTextGroupsByStyle(elements) {
+    const groups = [];
+    let currentGroup = [];
+    let currentStyle = null;
+    
+    for (let i = 0; i < elements.length; i++) {
+        const element = elements[i];
+        
+        // Si c'est un Text
+        if (element instanceof Text) {
+            const elementStyle = element.style;
+            
+            // Si c'est le premier Text ou si le style est différent du précédent
+            if (currentStyle === null || elementStyle !== currentStyle) {
+                // Sauvegarder le groupe précédent s'il contient au moins 2 éléments
+                if (currentGroup.length >= 2) {
+                    groups.push([...currentGroup]);
+                }
+                
+                // Commencer un nouveau groupe
+                currentGroup = [i];
+                currentStyle = elementStyle;
+            }
+            // Si le style est le même que le précédent
+            else if (elementStyle === currentStyle) {
+                currentGroup.push(i);
+            }
+        }
+        // Si c'est un Linebreak ou autre chose
+        else {
+            // Sauvegarder le groupe actuel s'il contient au moins 2 éléments
+            if (currentGroup.length >= 2) {
+                groups.push([...currentGroup]);
+            }
+            
+            // Réinitialiser pour le prochain groupe
+            currentGroup = [];
+            currentStyle = null;
+        }
+    }
+    
+    // Ne pas oublier le dernier groupe
+    if (currentGroup.length >= 2) {
+        groups.push(currentGroup);
+    }
+    
+    return groups;
 }
