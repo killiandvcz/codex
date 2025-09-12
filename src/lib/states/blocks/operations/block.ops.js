@@ -29,7 +29,7 @@ export class BlocksInsertion extends Operation {
 /**
  * Represents a block removal operation.
  * @typedef {Object} BlocksRemovalData
- * @property {string[]} ids - The IDs of the blocks to be removed.
+ * @property {string[]} [ids] - The IDs of the blocks to be removed.
  */
 
 export class BlocksRemoval extends Operation {

@@ -3,6 +3,7 @@ import { Block } from '../block.svelte';
 import { TextDeleteOperation, TextEdition, TextInsertOperation } from './operations/text.ops';
 import { Focus } from '$lib/values/focus.values';
 import { executor, SMART, Transaction } from '$lib/utils/operations.utils';
+import { EDITABLE } from '$lib/utils/capabilities';
 
 /**
 * @typedef {import('../block.svelte').BlockInit & {
@@ -31,6 +32,7 @@ export class Text extends Block {
     /** @type {import('../block.svelte').BlockManifest} */
     static manifest = {
         type: 'text',
+        capabilities: [EDITABLE]
     }
     
     /** 
@@ -42,7 +44,6 @@ export class Text extends Block {
             metadata: init.metadata || {}
         });
     
-        this.log('Creating text block with init:', init);
         this.text = init.text || '';
         this.bold = init.bold || false;
         this.italic = init.italic || false;
@@ -60,8 +61,6 @@ export class Text extends Block {
             })
         });
         
-        this.method('insert', this.handleInsert);
-        this.method('delete', this.handleDelete);
 
         this.trine("edit", this.prepareEdit, this.edit, this.applyEdit);
     }
@@ -261,51 +260,11 @@ export class Text extends Block {
             }
         }
     }
+
     
-    /** @param {String} text @param {Number} offset */
-    insert = (text, offset) => {
-        if (offset < 0 || offset > this.text.length) {
-            throw new Error(`Offset ${offset} is out of bounds for text "${this.text}".`);
-        }
-        this.text = this.text.slice(0, offset) + text + this.text.slice(offset);
-        this.resync();
-        this.refresh();
-    }
-    
-    /** 
-    * @param {Number} from @param {Number} to 
-    * @returns {Boolean} Returns true if the block was deleted, false otherwise.
-    */
-    delete = (from, to) => {
-        this.log('DELETE', { from, to });
-        if (from === to) return false; // No-op if the range is empty
-        if (from < 0) from = this.text.length + (from + 1);
-        if (to < 0) to = this.text.length + (to + 1);
-        if (to > this.text.length) to = this.text.length;
-        if (from < 0 || to > this.text.length || from > to) throw new Error(`Invalid range from ${from} to ${to} for text "${this.text}".`);
-        this.text = this.text.slice(0, from) + this.text.slice(to);
-        if (!this.text.trim()) { return this.rm() };
-        this.resync();
-        this.refresh();
-        return false;
-    }
+
     
     
-    /** Merges this text block with another text block.
-    * @param {Text} textBlock - The text block to merge with.
-    * @throws {Error} If the provided block is not a Text instance.
-    */
-    merge = (textBlock) => {
-        if (!(textBlock instanceof Text)) {
-            throw new Error(`Cannot merge with non-text block: ${textBlock}`);
-        }
-        const end = this.text.length;
-        this.text += textBlock.text;
-        this.resync();
-        this.refresh();
-        textBlock.delete(0, -1);
-        // this.focus(new Focus(end, end));
-    }
     
     /**
     * @param {Focus} f 
@@ -391,70 +350,40 @@ export class Text extends Block {
     toMarkdown() {
         
     }
-    
-    // COMMANDS :
-    
-    
-    /** @param {Number} offset */
-    $split = (offset) => {
-        if (offset < 0 || offset > this.text.length) {
-            return null; // No split if offset is out of bounds
+
+    getRelativePosition() {
+        return {
+            start: this.start,
+            end: this.end
+        };
+    }
+
+    /** @param {{start: number, end: number}} hint */
+    toDOM(hint) {
+        const text = this.element?.firstChild;
+        if (text && text.nodeType === Node.TEXT_NODE) {
+            return {
+                ...(hint.start ? {
+                    start: {
+                        node: text,
+                        offset: hint?.start ?? 0
+                    }
+                } : {}),
+                ...(hint.end ? {
+                    end: {
+                        node: text,
+                        offset: hint?.end ?? this.text.length
+                    }
+                } : {})
+            };
         }
-        if (offset === 0 || offset === this.text.length) {
-            return null;
-        }
-        const newText = this.text.slice(offset);
-        this.text = this.text.slice(0, offset);
-        this.resync();
-        this.refresh();
-        return this.codex && (newText ? new Text(this.codex, { text: newText, bold: this.bold, italic: this.italic, underline: this.underline, strikethrough: this.strikethrough, code: this.code }) : null);
     }
+
     
-    /** @param {String} text @param {Number} offset */
-    $insert = (text, offset) => {
-        if (offset < 0 || offset > this.text.length) {
-            throw new Error(`Offset ${offset} is out of bounds for text "${this.text}".`);
-        }
-        this.text = this.text.slice(0, offset) + text + this.text.slice(offset);
-        this.resync();
-        this.refresh();
-    }
+
+
     
-    /** 
-    * Deletes a range of text from the block.
-    * @param {Number} from @param {Number} to 
-    * @returns {Boolean} Returns true if the block was deleted, false otherwise.
-    */
-    $delete = (from, to) => {
-        this.log('DELETE', { from, to });
-        if (from === to) return false; // No-op if the range is empty
-        if (from < 0) from = this.text.length + (from + 1);
-        if (to < 0) to = this.text.length + (to + 1);
-        if (to > this.text.length) to = this.text.length;
-        if (from < 0 || to > this.text.length || from > to) throw new Error(`Invalid range from ${from} to ${to} for text "${this.text}".`);
-        this.text = this.text.slice(0, from) + this.text.slice(to);
-        if (!this.text.trim()) { return this.rm() };
-        this.resync();
-        this.refresh();
-        return false;
-    }
-    
-    
-    /**
-    * @param {import('./operations/text.ops').TextDeleteOperationData} data 
-    */
-    handleDelete = (data) => {
-        const { from, to } = data;
-        this.delete(from, to);
-    }
-    
-    /**
-    * @param {import('./operations/text.ops').TextInsertOperation} data 
-    */
-    handleInsert = (data) => {
-        const { text, offset } = data;
-        this.insert(text, offset);
-    }
+
     
     
     

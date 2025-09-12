@@ -15,7 +15,7 @@ import { Codex } from './codex.svelte';
 * @typedef {Object} BlockManifest
 * @property {string} type - The type of block (e.g., "paragraph", "text", "linebreak").
 * @property {Object<string, BlockOperation>} [operations] - A map of operation types to their handlers.
-* @property {import('./capability.svelte').Capability[]} [capabilities] - The capabilities of the block.
+* @property {(import('./capability.svelte').Capability|symbol)[]} [capabilities] - The capabilities of the block.
 */
 
 /**
@@ -71,7 +71,7 @@ export class Block {
 
         /**
          * A set of preparators available on the block.
-         * @type {Map<string, (function(...any): Operation[])>}
+         * @type {Map<string, (function(...any): import('$lib/utils/operations.utils').Operation[])>}
          */
         this.preparators = new Map();
 
@@ -153,6 +153,119 @@ export class Block {
     }
 
 
+        /** @param {Node} node */
+    getNodePath(node) {
+        const path = [];
+        let current = node;
+        
+        while (current && current !== this.element) {
+            const parent = current.parentNode;
+            if (!parent) break;
+            const index = Array.from(parent.childNodes).indexOf(current);
+            path.unshift(index);
+            current = parent;
+        }
+        
+        return path;
+    }
+    
+    /** @param {Number[]} path */
+    getNodeFromPath(path) {
+        /** @type {Node} */
+        if (this.element) {
+            let current = this.element;
+        
+            for (const index of path) {
+                if (!current || !current.childNodes[index]) return null;
+                current = current.childNodes[index];
+            }
+            
+            return current;
+        } else return null;
+    }
+
+    /**
+     * Determines the relative position of the block in the document.
+     * @param {any} [hint] - Optional hint to specify the desired relative position ('before', 'after', 'start', 'end').
+     * @returns {any} - The relative position, which can be 'before', 'after', or an object representing a selection.
+     */
+    getRelativePosition(hint) {
+        // Par défaut, on ne supporte que 'before' ou 'after'
+        if (hint === 'start' || hint === 'before') return 'before';
+        if (hint === 'end' || hint === 'after') return 'after';
+        
+        // Si le bloc a une sélection active, la capturer
+        if (this.selected && window.getSelection) {
+            const sel = window.getSelection();
+            const range = sel.getRangeAt(0);
+            const startInMe = this.element?.contains(range.startContainer);
+            const endInMe = this.element?.contains(range.endContainer);
+            
+            // Si la sélection est dans mon element
+            if (this.element?.contains(range.startContainer)) {
+                return {
+                    type: 'selection',
+                    ...(startInMe ? {
+                        startPath: this.getNodePath(range.startContainer),
+                        startOffset: range.startOffset
+                    } : {startPath: null, startOffset: 0}),
+                    ...(endInMe ? {
+                        endPath: this.getNodePath(range.endContainer),
+                        endOffset: range.endOffset
+                    } : {endPath: null, endOffset: 0})
+                };
+            }
+        }
+        
+        return 'before'; // Fallback
+    }
+
+
+    /**
+     * 
+     * @param {any} relativePos 
+     * @returns {{
+     *  start?: {
+     *   node: Node,
+     *   offset: number
+     *  },
+     *  end?: {
+     *   node: Node,
+     *   offset: number
+     *  }
+     * }}
+     */
+    toDOM(relativePos) {
+        if (!this.element) return {};
+        
+        // Cas simple : avant/après le bloc
+        if (relativePos === 'before' || relativePos === 'after') return {};
+        
+        // Cas complexe : on avait capturé une sélection
+        if (relativePos?.type === 'selection') {
+            const startNode = this.getNodeFromPath(relativePos.startPath);
+            const endNode = this.getNodeFromPath(relativePos.endPath);
+            
+            return {
+                ...(startNode ? {
+                    start: {
+                        node: startNode,
+                        offset: relativePos.startOffset
+                    },
+                } : {}),
+                ...(endNode ? {
+                    end: {
+                        node: endNode,
+                        offset: relativePos.endOffset
+                    }
+                } : {})
+            };
+        }
+        
+        return {};
+    }
+
+
     /** @type {Object<string, any>} */
     metadata = $state({});
     
@@ -219,7 +332,7 @@ export class Block {
     /**
      * Prepares data for a specific operation.
      * @param {String} name
-     * @param {Object} data
+     * @param {Object?} [data]
      * @param {Object} [metadata]
      * @returns {import('$lib/utils/operations.utils').Operation[]}
      */
@@ -304,9 +417,9 @@ export class MegaBlock extends Block {
     constructor(codex, init = {}) {
         super(codex, init);
 
-        this.trine('insert', this.prepareInsert, this.insert, this.applyInsert);
-        this.trine('remove', this.prepareRemove, this.remove, this.applyRemove);
-        this.trine('replace', this.prepareReplace, this.replace, this.applyReplace);
+        this.trine('insert', this.prepareInsert.bind(this), this.insert, this.applyInsert);
+        this.trine('remove', this.prepareRemove.bind(this), this.remove, this.applyRemove);
+        this.trine('replace', this.prepareReplace.bind(this), this.replace, this.applyReplace);
     }
 
     /** @type {MegaBlockManifest} */
@@ -337,6 +450,7 @@ export class MegaBlock extends Block {
     /** @param {Block} block */
     contains = block => this.recursive.includes(block);
 
+
     // PREPARATORS
 
     /**
@@ -348,8 +462,10 @@ export class MegaBlock extends Block {
     prepareInsert = data => {
         let {offset} = data;
 
+        this.log(this.children.length, 'children before insert');
         if (!offset) offset = this.children.length;
         if (offset < 0) offset = this.children.length + offset + 1;
+        this.log('Preparing insert at offset:', offset);
         if (offset < 0) offset = 0;
         if (offset > this.children.length) offset = this.children.length;
 
@@ -371,7 +487,7 @@ export class MegaBlock extends Block {
      * id?: string,
      * }} data 
      */
-    prepareRemove = data => {
+    prepareRemove(data) {
         let { id, ids } = data;
 
         if (id && ids) throw new Error('Cannot provide both "id" and "ids" to remove blocks.');

@@ -11,11 +11,10 @@ import ParagraphComponent from '$lib/components/Paragraph.svelte';
 import { MegaBlock } from './block.svelte';
 import { Paragraph } from './blocks/paragraph.svelte';
 import { CodexSelection } from './selection.svelte';
-import { Text as TextBlock } from './blocks/text.svelte';
 import LinebreakComponent from '$lib/components/Linebreak.svelte';
 import { TextSystem } from './systems/textSystem.svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { multiBlockBackspaceStrategy } from './strategies/multiBlockBackspace.svelte';
+import { multiBlockBackspaceStrategy } from './strategies/codex.strategies';
 import { Transaction } from '$lib/utils/operations.utils';
 import { History } from './history.svelte';
 
@@ -206,5 +205,22 @@ export class Codex extends MegaBlock {
 
         return results;
     }
+
+
+    /**
+     * @param {{
+     *  start: { node: Node, offset: number },
+     *  end?: { node: Node, offset: number }
+     * }} focus
+     */
+    focus = (focus) => requestAnimationFrame(() => this.selection.setRange(focus.start.node, focus.start.offset, focus.end?.node || focus.start.node, focus.end?.offset || focus.start.offset));
+
+    /**
+     * @param {{
+     *  start: { node: Node, offset: number },
+     *  end?: { node: Node, offset: number }
+     * }} focus
+     */
+    setRange = focus => this.selection.setRange(focus.start.node, focus.start.offset, focus.end?.node || focus.start.node, focus.end?.offset || focus.start.offset);
 
 }

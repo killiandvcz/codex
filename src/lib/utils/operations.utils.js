@@ -48,6 +48,9 @@ export class Transaction {
     constructor(ops = [], codex) {
         this.codex = codex;
         this.operations = new Set(ops);
+
+        /** @type {Set<function(): Operation[]>} */
+        this.afters = new Set();
     }
 
     /** @type {Array<{ operation: Operation, result: any }>} */
@@ -62,6 +65,9 @@ export class Transaction {
 
         try {
             for (const op of this.operations) op.execute(this);
+            for (const after of this.afters) {
+                after().forEach(op => op.execute(this));
+            }
             await tick().then(() => this.commit());
             console.log("Transaction executed with results:", this.results);
             return this.results;
@@ -83,6 +89,12 @@ export class Transaction {
         }
     }
 
+
+    /** @param {function(): Operation[]} callback*/
+    after = callback => {
+        if (typeof callback === 'function') this.afters.add(callback);
+        return this;
+    }
 
     commit = () => {
         if (this.codex) {

@@ -2,12 +2,11 @@ import { Block, MegaBlock } from "../block.svelte";
 import { Linebreak } from "./linebreak.svelte";
 import { Text } from "./text.svelte";
 import { paragraphStrategies } from "./strategies/paragraph.strategies";
-import { MERGEABLE, MergeData } from "../capabilities/merge.capability";
 import { Focus } from "$lib/values/focus.values";
 import { ParagraphBlockInsertion } from "./operations/paragraph.ops";
 import { BlocksInsertion, BlocksRemoval } from "./operations/block.ops";
 import { SMART, Operation } from "$lib/utils/operations.utils";
-import { text } from "@sveltejs/kit";
+import { EDITABLE, MERGEABLE } from "$lib/utils/capabilities";
 
 /** 
 * @typedef {(import('./text.svelte').TextObject|import('./linebreak.svelte').LinebreakObject)[]} ParagraphContent
@@ -108,7 +107,11 @@ export class Paragraph extends MegaBlock {
                     if (selection.isInParagraph) this.focus(new Focus(selection.startOffset, selection.endOffset));
                 }
             })
+
+            $inspect(this.children).with(console.trace);
         });
+
+        this.preparator('merge', this.prepareMerge.bind(this));
     }
     
     /** @type {HTMLParagraphElement?} */
@@ -203,10 +206,7 @@ export class Paragraph extends MegaBlock {
             const obj = this.toInit();
             this.log('Current paragraph init for merge:', obj);
             if (previousMergeable && previousMergeable !== this) {
-                previousMergeable.merge({
-                    source: this,
-                    children: obj.init.children || []
-                })?.then(() => {
+                previousMergeable.merge(this)?.then(() => {
                     console.log('Merged paragraph into previous block:', previousMergeable);
                 })
             }
@@ -421,21 +421,24 @@ export class Paragraph extends MegaBlock {
 
     debug = $derived(`${this.selection.startOffset} - ${this.selection.endOffset} [length: ${this.length}]`);
 
-
     /**
      * Merges the paragraph with the given data.
-     * @param {{
-     *  children: ParagraphChildrenInit,
-     *  source: Block|null
-     * }} data 
+     * @param {import('$lib/states/block.svelte').Block} source 
      * @returns 
      */
-    merge = data => {
+    merge = source => {
         if (!this.codex) return;
+        const offset = (this.end - this.start) - 1;
+        this.log('Focusing at offset after merge:', offset);
+        return this.codex.tx(this.prepareMerge(source)).execute().then(() => {
+            this.focus(new Focus(offset, offset));
+        })
+    }
+    /** @param {import('$lib/states/block.svelte').Block} source */
+    prepareMerge = source => {
         const ops = [];
-        const { source, children } = data;
+        const children = source?.toInit?.().init?.children || [];
 
-        this.log('Merging into paragraph:', this.index, 'with data:', data);
         if (children?.length) {
             ops.push(...this.prepareInsert({
                 blocks: children,
@@ -444,14 +447,9 @@ export class Paragraph extends MegaBlock {
         } 
 
         if (source) ops.push(...source.prepareDestroy());
-        const offset = (this.end - this.start) - 1;
-        this.log('Focusing at offset after merge:', offset);
-        return this.codex.tx(ops).execute().then(() => {
-            this.focus(new Focus(offset, offset));
-        })
+
+        return ops || [];
     }
-
-
 
     /**
      * Splits the paragraph at the given offsets.
@@ -496,9 +494,11 @@ export class Paragraph extends MegaBlock {
             }   
         }
 
+        const index = this.codex.children.indexOf(this);
+
         const insertion = this.parent?.prepare('insert', {
             block: newParagraphInit,
-            offset: this.index + 1
+            offset: index + 1
         }, {key: 'new-paragraph'});
         this.log('Insertion op for new paragraph:', insertion);
         if (insertion) ops.push(...insertion);
@@ -508,6 +508,36 @@ export class Paragraph extends MegaBlock {
         
 
         this.log('Operations for split:', ops);
+        return ops;
+    }
+
+    /**
+     * @param {(import('$lib/states/blocks/operations/block.ops').BlocksRemovalData & {
+     *  id?: String
+     * })|import('$lib/utils/operations.utils').SMART} data 
+     * @returns {import('$lib/utils/operations.utils').Operation[]}
+     */
+    prepareRemove(data = SMART) {
+        if (!(data === SMART)) return super.prepareRemove(data);
+        
+        /** @type {import('$lib/utils/operations.utils').Operation[]} */
+        const ops = [];
+
+        console.log(this);
+        if (this.parent) {
+            const startBlock = this.children.find(child => child.selected);
+            const endBlock = this.children.findLast(child => child.selected && child !== startBlock);
+            const betweenBlocks = (startBlock && endBlock) && this.children.slice(this.children.indexOf(startBlock) + 1, this.children.indexOf(endBlock)) || [];
+
+            if (endBlock?.capabilities.has(EDITABLE) && endBlock !== startBlock) ops.push(...endBlock.prepare('edit', null, {key: 'clear-selection'})); else ops.push(...((endBlock && !(endBlock instanceof Linebreak && this.children.at(-1) === endBlock)) ? this.prepareRemove({ id: endBlock.id }) : []));
+
+            if (betweenBlocks.length) ops.push(...this.prepareRemove({
+                ids: betweenBlocks.filter(b => !(b instanceof Linebreak && this.children.at(-1) === b)).map(b => b.id)
+            }));
+
+            if (startBlock?.capabilities.has(EDITABLE)) ops.push(...startBlock.prepare('edit', null, {key: 'clear-selection'})); else ops.push(...(startBlock ? this.prepareRemove({ id: startBlock.id }) : []));
+        } 
+
         return ops;
     }
 
@@ -526,6 +556,36 @@ export class Paragraph extends MegaBlock {
                 children: this.children.filter(child => !(child instanceof Linebreak && this.children.at(-1) === child)).map(child => child.toInit()),
             }
         }
+    }
+
+    getRelativePosition() {
+        return {
+            start: this.selection.startOffset,
+            end: this.selection.endOffset
+        }
+    }
+
+    /**
+     * @param {{start: number, end: number}} hint 
+     */
+    toDOM(hint) {
+        let { start, end } = hint;
+        this.log('Converting to DOM with hint:', hint);
+        if (start < 0) start = 0;
+        if (end > this.length) end = this.length;
+        const data = this.getFocusData(new Focus(start, end));
+        this.log(data);
+        return {
+            start: {
+                node: data?.startElement || this.element,
+                offset: data?.startOffset || 0
+            },
+            end: {
+                node: data?.endElement || this.element,
+                offset: data?.endOffset || 0
+            }
+        };
+
     }
 }
 
